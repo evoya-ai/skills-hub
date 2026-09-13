@@ -11,7 +11,7 @@ project doesn't use.
 ```
 skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
 ├── bin/skill-repo            # the CLI
-├── meta/skill-finder/        # the ONE global skill (symlinked into ~/.roo/skills by setup)
+├── meta/skill-hub-handling/   # the ONE global skill (symlinked into ~/.roo/skills by setup)
 ├── sources.template.yml      # registry template
 ├── sources.yml               # machine-local registry (gitignored, created by setup)
 ├── personal/                 # your private skills repo (gitignored here, own git repo)
@@ -30,7 +30,7 @@ also handles foreign layouts (any category depth) for external collections.
 git clone git@github.com:evoya-ai/skills-hub.git ~/workspaces/skill-hub
 cd ~/workspaces/skill-hub
 ./bin/skill-repo setup          # scaffolds personal/ + teams/evoya/, writes sources.yml,
-                                # installs the global skill-finder. Idempotent.
+                                # installs the global skill-hub-handling skill. Idempotent.
 ```
 
 Per project:
@@ -58,14 +58,14 @@ Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
 
 | Command | Purpose |
 |---|---|
-| `setup [--personal <url>] [--team <name>[=<url>]]` | scaffold/clone content repos, seed `sources.yml`, install skill-finder |
+| `setup [--personal <url>] [--team <name>[=<url>]]` | scaffold/clone content repos, seed `sources.yml`, install skill-hub-handling |
 | `link [--prune] [--force] [--allow-untrusted]` | manifest → symlinks (idempotent; `--prune` removes stale hub links) |
 | `search <term>` | find skills across all registered sources |
 | `list` | show this project's links + drift vs manifest |
 | `verify` | check registry, links, frontmatter uniqueness |
 | `update` | fetch + ff-only pull for sources with a `remote` |
 | `add-remote <url> [--name N] [--root P]` | register an external collection (marked untrusted) |
-| `promote [--force] <ref\|path> <source>/<category>` | copy a skill (any dir with `SKILL.md`, or a hub ref) into a content repo: scans for secrets/emails/paths, stages it — commit/review is yours; `--force` backs up the old copy to `.promote-backup/` |
+| `promote [--force] <ref\|path> <source>/<category>` | copy a skill (any dir with `SKILL.md`, or a hub ref) into a content repo: literal content scan, staged via git (never commits); `--force` replaces via git history (disk backup only for uncommitted changes) |
 
 ## Trust classes
 

@@ -11,7 +11,7 @@ HUB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCES_YML="$HUB/sources.yml"
 SOURCES_TEMPLATE="$HUB/sources.template.yml"
 GLOBAL_SKILLS="$HOME/.roo/skills"
-FINDER="skill-finder"
+FINDER="skill-hub-handling"
 DEFAULT_TEAM="evoya"
 FS='|'
 
@@ -426,7 +426,7 @@ cmd_setup() {
   chmod +x "$0"
   mkdir -p "$GLOBAL_SKILLS"
   local dest="$GLOBAL_SKILLS/$FINDER"
-  local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$HUB/meta/skill-finder")"
+  local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$HUB/meta/skill-hub-handling")"
   if [ -L "$dest" ]; then
     ln -sfn "$target" "$dest"
   elif [ -e "$dest" ]; then
@@ -440,7 +440,7 @@ cmd_setup() {
   else
     ln -s "$target" "$dest"
   fi
-  info "setup: done. sources.yml ready; skill-finder installed globally."
+  info "setup: done. sources.yml ready; skill-hub-handling installed globally."
 }
 
 cmd_update() {
@@ -567,17 +567,23 @@ $m"
   local gitpath="$tcat/$id"; [ "$troot" != "." ] && gitpath="$troot/$gitpath"
   [ "$srcdir" = "$dest" ] && die "promote: source and target are the same directory"
 
-  # ---- collision: refuse, or back up outside the repo (--force)
+  # ---- collision: refuse, or replace via git (history is the backup)
   if [ -e "$dest" ]; then
     if [ "$force" != 1 ]; then
-      die "promote: '$tsrc/$tcat/$id' already exists — rerun with --force to replace (old copy is backed up outside the repo)"
+      die "promote: '$tsrc/$tcat/$id' already exists — rerun with --force to replace (committed versions stay recoverable in git history)"
     fi
-    local bts bdir
-    bts="$(date +%Y%m%d%H%M%S)"
-    bdir="$HUB/.promote-backup/$tsrc-$id-$bts"
-    mkdir -p "$bdir"
-    mv "$dest" "$bdir/"
-    warn "promote: existing copy moved aside (NOT committed anywhere): $bdir"
+    if [ -n "$(git -C "$tpath" status --porcelain -- "$gitpath" 2>/dev/null || true)" ]; then
+      # uncommitted local changes exist ONLY on disk — git cannot recover them
+      local bts bdir
+      bts="$(date +%Y%m%d%H%M%S)"
+      bdir="$HUB/.promote-backup/$tsrc-$id-$bts"
+      mkdir -p "$bdir"
+      mv "$dest" "$bdir/"
+      warn "promote: existing copy had UNCOMMITTED changes — backed up outside the repo: $bdir"
+    else
+      git -C "$tpath" rm -r -q -- "$gitpath"
+      info "promote: replacing committed version — old state recoverable from git history"
+    fi
   fi
 
   # ---- copy, scan, stage — commit/review stays with the human (spec 8.1)
