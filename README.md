@@ -1,0 +1,92 @@
+# Skills Hub
+
+One clone → all your Roo skills, selected per project, from **personal**,
+**team**, and **external** sources. Each project declares which skills it
+needs in `.roo/skills.yml` and gets them as symlinks — no more skill copies
+drifting across `.roo` folders, and no prompt pollution from skills a
+project doesn't use.
+
+## Layout
+
+```
+skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
+├── bin/skill-repo            # the CLI
+├── meta/skill-finder/        # the ONE global skill (symlinked into ~/.roo/skills by setup)
+├── sources.template.yml      # registry template
+├── sources.yml               # machine-local registry (gitignored, created by setup)
+├── personal/                 # your private skills repo (gitignored here, own git repo)
+├── teams/<team>/             # one shared skills repo per team (gitignored here, own git repo)
+└── external/<collection>/    # clones of third-party skill repos (gitignored here)
+```
+
+The content repos (`personal/`, `teams/*`, `external/*`) are independent git
+repositories, deliberately gitignored by this repo. Skills live at
+`skills/<category>/<skill>/SKILL.md` inside each content repo; the scanner
+also handles foreign layouts (any category depth) for external collections.
+
+## Quickstart
+
+```bash
+git clone git@github.com:evoya-ai/skills-hub.git ~/workspaces/skill-hub
+cd ~/workspaces/skill-hub
+./bin/skill-repo setup          # scaffolds personal/ + teams/evoya/, writes sources.yml,
+                                # installs the global skill-finder. Idempotent.
+```
+
+Per project:
+
+```yaml
+# <project>/.roo/skills.yml  (commit this file)
+source: evoya                  # optional default source for unqualified entries
+categories:
+  - evoya/saas-pegasus         # link a whole category
+skills:
+  - data-table                 # single skill (unqualified: must be unique)
+  - external/awesome/code-review as ext-code-review   # alias on collision
+exclude:
+  - seo/seo-drift              # subtract from selection
+```
+
+```bash
+~/workspaces/skill-hub/bin/skill-repo link        # creates .roo/skills/<name> symlinks + .roo/skills.lock
+```
+
+Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
+(commit only the manifest).
+
+## CLI
+
+| Command | Purpose |
+|---|---|
+| `setup [--personal <url>] [--team <name>[=<url>]]` | scaffold/clone content repos, seed `sources.yml`, install skill-finder |
+| `link [--prune] [--force] [--allow-untrusted]` | manifest → symlinks (idempotent; `--prune` removes stale hub links) |
+| `search <term>` | find skills across all registered sources |
+| `list` | show this project's links + drift vs manifest |
+| `verify` | check registry, links, frontmatter uniqueness |
+| `update` | fetch + ff-only pull for sources with a `remote` |
+| `add-remote <url> [--name N] [--root P]` | register an external collection (marked untrusted) |
+| `promote <ref> <target-source>/<category>` | copy a skill across sources (not implemented yet) |
+
+## Trust classes
+
+- `personal/` — private, never leaves your machine unless you choose a
+  private remote.
+- `teams/<team>/` — shared via the team's own git remote. Moving a skill
+  personal → team crosses a trust boundary: **review for secrets, tokens
+  and machine-specific absolute paths before pushing.**
+- `external/*` — untrusted third-party prompt content. `link` refuses bulk
+  category selection from untrusted sources (individual skills only, unless
+  `--allow-untrusted`).
+
+## ⚠ Read this before running git clean
+
+**`git clean -fdX` (or `-fdx`) inside this repo deletes ALL ignored content —
+including `personal/` and `teams/*` clones, with uncommitted work.** Recovery
+is only via the content repos' remotes and your backups. Never `git add -f`
+inside this repo either.
+
+## Status
+
+Phase 2 skeleton (2026-09-13). Full spec: `skills-hub-spec.md` in the
+sysadmin-bachi workspace (to be moved into `meta/` once stabilized).
+Migration of the ~73 audited skills happens next, cluster by cluster.

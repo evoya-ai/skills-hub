@@ -1,0 +1,21 @@
+# Skills hub source registry (TEMPLATE — committed).
+# `skill-repo setup` seeds sources.yml from this file and MERGES on re-run
+# (it never removes entries you added later via add-remote).
+# Registry format is constrained block-YAML; keep this shape.
+sources:
+  - name: personal
+    path: personal
+    root: skills
+  - name: evoya
+    path: teams/evoya
+    root: skills
+  # more teams = more sources:
+  # - name: insign
+  #   path: teams/insign
+  #   root: skills
+  # external collections (registered via `skill-repo add-remote <url>`):
+  # - name: awesome-roo
+  #   path: external/awesome-roo
+  #   root: .
+  #   remote: https://github.com/example/awesome-roo
+  #   untrusted: true
