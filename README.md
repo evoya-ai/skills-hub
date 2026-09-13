@@ -87,6 +87,8 @@ inside this repo either.
 
 ## Status
 
-Phase 2 skeleton (2026-09-13). Full spec: `skills-hub-spec.md` in the
-sysadmin-bachi workspace (to be moved into `meta/` once stabilized).
-Migration of the ~73 audited skills happens next, cluster by cluster.
+Phase 2 done (2026-09-13): scaffold + CLI v1 smoke-tested, content repos
+seeded. Skill migration (phase 3) is in progress; its local, gitignored
+working area lives in `migration/` (handoff doc, spec, audit report) —
+start at `migration/HANDOFF.md` if that folder exists on this machine.
+The spec will be promoted into `meta/` once stabilized.
