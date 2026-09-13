@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # skill-repo — per-project Roo skill linking from the skills hub.
 # Layout, grammar and trust rules: see README.md in the hub root.
+#
+# Internal note: all internal record lines use '|' as field separator
+# (NOT tab) — IFS-whitespace delimiters collapse adjacent separators and
+# silently drop empty fields.
 set -euo pipefail
 
 HUB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,6 +13,7 @@ SOURCES_TEMPLATE="$HUB/sources.template.yml"
 GLOBAL_SKILLS="$HOME/.roo/skills"
 FINDER="skill-finder"
 DEFAULT_TEAM="evoya"
+FS='|'
 
 die()      { echo "skill-repo: error: $*" >&2; exit 1; }
 conflict() { echo "skill-repo: conflict: $*" >&2; exit 2; }
@@ -32,10 +37,11 @@ EOF
 }
 
 # ---------------------------------------------------------------- registry
+# parse_sources <file> -> lines: name|path|root|remote|untrusted
 
-parse_sources() { # file -> TSV: name \t path \t root \t remote \t untrusted
+parse_sources() {
   awk '
-    function flush() { if (name != "") printf "%s\t%s\t%s\t%s\t%s\n", name, path, root, remote, untrusted }
+    function flush() { if (name != "") printf "%s|%s|%s|%s|%s\n", name, path, root, remote, untrusted }
     /^sources:/ { insrc = 1; next }
     insrc && /^[^[:space:]#]/ { insrc = 0 }
     insrc {
@@ -45,13 +51,13 @@ parse_sources() { # file -> TSV: name \t path \t root \t remote \t untrusted
       if (line ~ /^[[:space:]]*-[[:space:]]*name:/) {
         flush(); name = path = root = remote = ""; untrusted = "false"
         sub(/^[[:space:]]*-[[:space:]]*name:[[:space:]]*/, "", line); name = line
-      } else if (line ~ /^[[:space:]]+path:/)     { sub(/^[[:space:]]+path:[[:space:]]*/, "", line);     path = line }
-        else if (line ~ /^[[:space:]]+root:/)     { sub(/^[[:space:]]+root:[[:space:]]*/, "", line);     root = line }
-        else if (line ~ /^[[:space:]]+remote:/)   { sub(/^[[:space:]]+remote:[[:space:]]*/, "", line);   remote = line }
-        else if (line ~ /^[[:space:]]+untrusted:/){ sub(/^[[:space:]]+untrusted:[[:space:]]*/, "", line); untrusted = (line ~ /^[Tt]/) ? "true" : "false" }
+      } else if (line ~ /^[[:space:]]+path:/)      { sub(/^[[:space:]]+path:[[:space:]]*/, "", line);      path = line }
+        else if (line ~ /^[[:space:]]+root:/)      { sub(/^[[:space:]]+root:[[:space:]]*/, "", line);      root = line }
+        else if (line ~ /^[[:space:]]+remote:/)    { sub(/^[[:space:]]+remote:[[:space:]]*/, "", line);    remote = line }
+        else if (line ~ /^[[:space:]]+untrusted:/) { sub(/^[[:space:]]+untrusted:[[:space:]]*/, "", line); untrusted = (line ~ /^[Tt]/) ? "true" : "false" }
     }
     END { flush() }
-  ' "$1" | sed -e 's/\t[[:space:]]*$//' -e 's/[[:space:]]*\t/\t/g'
+  ' "$1"
 }
 
 load_sources() {
@@ -62,17 +68,16 @@ load_sources() {
 
 is_source_name() {
   [ -n "$1" ] || return 1
-  while IFS=$'\t' read -r n _; do [ "$n" = "$1" ] && return 0; done <<< "$SRC_LINES"
+  local n
+  while IFS="$FS" read -r n _; do [ "$n" = "$1" ] && return 0; done <<< "$SRC_LINES"
   return 1
 }
 
 # ---------------------------------------------------------------- index
-# TSV: source \t category \t id \t untrusted \t description \t path
+# lines: source|category|id|untrusted|description|path
 
 build_index() {
-  INDEX=""
-  local out
-  out="$(while IFS=$'\t' read -r name path root remote untrusted; do
+  INDEX="$(while IFS="$FS" read -r name path root remote untrusted; do
     [ -n "${name:-}" ] || continue
     root="${root:-.}"; root="${root%/}"
     base="$HUB/$path"
@@ -93,11 +98,10 @@ build_index() {
       catpath="$(dirname "$rel")"; [ "$catpath" = "." ] && catpath=""
       desc="$(grep -m1 '^description:' "$scanroot/$d/SKILL.md" 2>/dev/null \
               | sed -e 's/^description:[[:space:]]*//' -e 's/^"//' -e 's/"[[:space:]]*$//' | cut -c1-110)"
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$catpath" "$id" "$untrusted" "${desc:-}" "$scanroot/$rel"
+      printf '%s|%s|%s|%s|%s|%s\n' "$name" "$catpath" "$id" "${untrusted:-false}" "${desc:-}" "$scanroot/$rel"
     done < <(cd "$scanroot" && find . \( -name node_modules -o \( -name '.*' ! -name '.' \) \) -prune \
              -o -type d -exec test -f '{}/SKILL.md' ';' -prune -print)
   done <<< "$SRC_LINES")"
-  INDEX="$out"
 }
 
 # ---------------------------------------------------------------- manifest
@@ -115,16 +119,15 @@ read_manifest() {
     [ -z "$line" ] && continue
     case "$line" in
       source:*)
-        rest="$(printf '%s' "${line#source:}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        DEFAULT_SOURCE="$rest" ;;
+        DEFAULT_SOURCE="$(printf '%s' "${line#source:}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" ;;
       categories:*)
-        rest="${line#categories:}"; rest="$(printf '%s' "$rest" | tr -d ' ')"; section=cats
+        rest="$(printf '%s' "${line#categories:}" | tr -d ' ')"; section=cats
         [ -n "$rest" ] && [ "$rest" != "[]" ] && warn "manifest: inline lists not supported: $line" ;;
       skills:*)
-        rest="${line#skills:}"; rest="$(printf '%s' "$rest" | tr -d ' ')"; section=skills
+        rest="$(printf '%s' "${line#skills:}" | tr -d ' ')"; section=skills
         [ -n "$rest" ] && [ "$rest" != "[]" ] && warn "manifest: inline lists not supported: $line" ;;
       exclude:*)
-        rest="${line#exclude:}"; rest="$(printf '%s' "$rest" | tr -d ' ')"; section=excl
+        rest="$(printf '%s' "${line#exclude:}" | tr -d ' ')"; section=excl
         [ -n "$rest" ] && [ "$rest" != "[]" ] && warn "manifest: inline lists not supported: $line" ;;
       -*)
         rest="$(printf '%s' "${line#-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
@@ -137,56 +140,55 @@ read_manifest() {
         esac ;;
       *) warn "manifest: unrecognized line: $line" ;;
     esac
+    :
   done < "$MANIFEST"
 }
 
 # ---------------------------------------------------------------- resolution
-# RESULT: lines "linkname \t source \t category \t path"
-# SEL_TMP accumulates raw index lines (source\tcat\tid\tuntrusted\tdesc\tpath)
-
-sel_add() { # index-line
-  printf '%s\n' "$1" >> "$SEL_TMP"
-}
+# RESULT: lines "linkname|source|category|path"
 
 resolve() {
-  SEL_TMP="$(mktemp)"
+  SEL_TMP="$(mktemp)"; ALIAS_TMP="$(mktemp)"
   RESULT=""
-  local ref first src path m ns ids alias id cat
 
-  local -A used=()   # linkname -> "src/path"
+  local -A used=()
 
-  absorb_matches() { # $1=matched lines, $2=alias(optional), $3=origin-ref
-    local ln
-    while IFS=$'\t' read -r s c i u d p; do
+  absorb_matches() { # $1=matched index lines, $2=alias (optional), $3=origin ref
+    local ln s c i u d p
+    while IFS="$FS" read -r s c i u d p; do
       [ -n "${s:-}" ] || continue
       ln="${2:-$i}"
-      if [ -n "${used[$ln]:-}" ] && [ "${used[$ln]}" != "$s|$p" ]; then
-        conflict "link name '$ln' would be used twice ('${used[$ln]}' and '$s|$p') — add an 'as' alias (ref: $3)"
+      if [ -n "${used[$ln]:-}" ] && [ "${used[$ln]}" != "$s:$p" ]; then
+        conflict "link name '$ln' used twice ('${used[$ln]}' and '$s:$p') — add an 'as' alias (ref: $3)"
       fi
-      used["$ln"]="$s|$p"
-      sel_add "$(printf '%s\t%s\t%s\t%s\t%s\t%s' "$s" "$c" "$i" "$u" "$d" "$p")"
-      [ -n "${2:-}" ] && printf 'ALIAS\t%s\t%s\n' "$i" "$ln" >> "$ALIAS_TMP"
+      used["$ln"]="$s:$p"
+      printf '%s|%s|%s|%s|%s|%s\n' "$s" "$c" "$i" "$u" "$d" "$p" >> "$SEL_TMP"
+      if [ -n "${2:-}" ]; then
+        printf 'ALIAS|%s|%s\n' "$i" "$2" >> "$ALIAS_TMP"
+      fi
     done <<< "$1"
   }
 
-  ALIAS_TMP="$(mktemp)"
+  local ref first src path m ns id cat alias
 
   for ref in "${CATS[@]:-}"; do
     [ -z "$ref" ] && continue
     src=""; path="$ref"; first="${ref%%/*}"
     if is_source_name "$first"; then src="$first"; path="${ref#*/}"; fi
-    [ -z "$path" ] || [ "$path" = "$ref" ] && [ -n "$src" ] && conflict "category ref '$ref' needs a category path after the source"
-    if [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ]; then src="$DEFAULT_SOURCE"; fi
-    m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v s="$src" -v c="$path" '($1==s)&&($2==c)')"
+    if [ -n "$src" ] && [ "$path" = "$ref" ]; then
+      conflict "category ref '$ref' needs a category path after the source"
+    fi
+    [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ] && src="$DEFAULT_SOURCE"
+    m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$src" -v c="$path" '(s != "") && ($1 == s) && ($2 == c)')"
     if [ -z "$m" ]; then
-      if [ -z "$src" ]; then m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v c="$path" '$2==c')"; fi
-      [ -z "$m" ] && die "category '$ref' not found in any source (run 'skill-repo search $path')"
+      [ -z "$src" ] && m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v c="$path" '$2 == c')"
+      [ -z "$m" ] && die "category '$ref' not found in any source (try: skill-repo search $path)"
     fi
     if [ -z "$src" ]; then
-      ns="$(printf '%s\n' "$m" | awk -F'\t' '{print $1}' | sort -u | wc -l)"
-      [ "$ns" -gt 1 ] && conflict "category '$ref' is ambiguous across sources: $(printf '%s\n' "$m" | awk -F'\t' '{print $1}' | sort -u | paste -sd, -)"
+      ns="$(printf '%s\n' "$m" | awk -F"$FS" '{print $1}' | sort -u | wc -l)"
+      [ "$ns" -gt 1 ] && conflict "category '$ref' is ambiguous across sources: $(printf '%s\n' "$m" | awk -F"$FS" '{print $1}' | sort -u | paste -sd, -)"
     fi
-    if [ "$ALLOW_UNTRUSTED" != 1 ] && printf '%s\n' "$m" | awk -F'\t' '$4=="true"' | grep -q .; then
+    if [ "$ALLOW_UNTRUSTED" != 1 ] && printf '%s\n' "$m" | awk -F"$FS" '$4 == "true"' | grep -q .; then
       conflict "category '$ref' selects from an untrusted source — pick individual skills instead (or --allow-untrusted)"
     fi
     absorb_matches "$m" "" "$ref"
@@ -196,29 +198,27 @@ resolve() {
     [ -z "$ref" ] && continue
     alias=""
     case "$ref" in
-      *" as "*) alias="${ref##* as }"; alias="$(printf '%s' "$alias" | sed 's/[[:space:]]//g')"
-                ref="${ref%% as *}";;
+      *" as "*)
+        alias="${ref##* as }"; alias="$(printf '%s' "$alias" | sed 's/[[:space:]]//g')"
+        ref="${ref%% as *}" ;;
     esac
     src=""; path="$ref"; first="${ref%%/*}"
     if is_source_name "$first"; then src="$first"; path="${ref#*/}"; fi
-    if [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ]; then src="$DEFAULT_SOURCE"; fi
+    [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ] && src="$DEFAULT_SOURCE"
     id="${path##*/}"
     cat="${path%/*}"; [ "$cat" = "$path" ] && cat=""
     if [ -n "$src" ]; then
-      if [ -n "$cat" ]; then
-        m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v s="$src" -v c="$cat" -v i="$id" '($1==s)&&($2==c)&&($3==i)')"
-        [ -z "$m" ] && m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v s="$src" -v i="$id" '($1==s)&&($3==i)')"
-      else
-        m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v s="$src" -v i="$id" '($1==s)&&($3==i)')"
-      fi
-      [ -z "$m" ] && die "skill '$ref' not found in source '$src' (run 'skill-repo search $id')"
+      m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$src" -v i="$id" '($1 == s) && ($3 == i)')"
+      [ -z "$m" ] && die "skill '$ref' not found in source '$src' (try: skill-repo search $id)"
       ns="$(printf '%s\n' "$m" | wc -l)"
-      [ "$ns" -gt 1 ] && conflict "skill '$ref' matches $ns skills in '$src' — qualify the category path:\n$m"
+      [ "$ns" -gt 1 ] && conflict "skill '$ref' matches $ns skills in '$src' — qualify the category path:
+$m"
     else
-      m="$(printf '%s\n' "$INDEX" | awk -F'\t' -v i="$id" '$3==i')"
-      [ -z "$m" ] && die "skill '$ref' not found in any source (run 'skill-repo search $id')"
-      ns="$(printf '%s\n' "$m" | awk -F'\t' '{print $1}' | sort -u | wc -l)"
-      [ "$ns" -gt 1 ] && conflict "skill '$ref' is ambiguous across sources:\n$m"
+      m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v i="$id" '$3 == i')"
+      [ -z "$m" ] && die "skill '$ref' not found in any source (try: skill-repo search $id)"
+      ns="$(printf '%s\n' "$m" | awk -F"$FS" '{print $1}' | sort -u | wc -l)"
+      [ "$ns" -gt 1 ] && conflict "skill '$ref' is ambiguous across sources:
+$m"
     fi
     absorb_matches "$m" "$alias" "$ref"
   done
@@ -227,30 +227,28 @@ resolve() {
     [ -z "$ref" ] && continue
     src=""; path="$ref"; first="${ref%%/*}"
     if is_source_name "$first"; then src="$first"; path="${ref#*/}"; fi
-    if [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ]; then src="$DEFAULT_SOURCE"; fi
+    [ -z "$src" ] && [ -n "$DEFAULT_SOURCE" ] && src="$DEFAULT_SOURCE"
     id="${path##*/}"; cat="${path%/*}"; [ "$cat" = "$path" ] && cat=""
-    awk -F'\t' -v s="$src" -v c="$cat" -v i="$id" \
-      '(s=="" || $1==s) && (c=="" || $2==c) && (i=="" || $3==i)' "$SEL_TMP" > "$SEL_TMP.e" 2>/dev/null \
-      || true
-    { grep -vFf <(awk -F'\t' -v s="$src" -v c="$cat" -v i="$id" \
-        '(s=="" || $1==s) && (c=="" || $2==c) && (i=="" || $3==i)' "$SEL_TMP") "$SEL_TMP" || true; } > "$SEL_TMP.n"
-    mv "$SEL_TMP.n" "$SEL_TMP"
+    awk -F"$FS" -v s="$src" -v c="$cat" -v i="$id" \
+      '(s != "" && $1 != s) || (c != "" && $2 != c) || (i != "" && $3 != i)' "$SEL_TMP" > "$SEL_TMP.keep" || true
+    mv "$SEL_TMP.keep" "$SEL_TMP"
   done
 
-  # dedupe by path, build RESULT
   local -A seen=()
-  while IFS=$'\t' read -r s c i u d p; do
+  local s c i u d p ln
+  while IFS="$FS" read -r s c i u d p; do
     [ -n "${s:-}" ] || continue
     [ -n "${seen[$p]:-}" ] && continue
     seen["$p"]=1
     ln="$i"
-    if grep -qF "$(printf 'ALIAS\t%s\t' "$i")" "$ALIAS_TMP" 2>/dev/null; then
-      ln="$(grep -F "$(printf 'ALIAS\t%s\t' "$i")" "$ALIAS_TMP" | head -1 | cut -f3)"
+    if grep -qF "ALIAS|$i|" "$ALIAS_TMP" 2>/dev/null; then
+      ln="$(grep -F "ALIAS|$i|" "$ALIAS_TMP" | head -1 | cut -d"$FS" -f3)"
     fi
-    RESULT="${RESULT}$(printf '%s\t%s\t%s\t%s\n' "$ln" "$s" "$c" "$p")"
-  done < <(sort -u -t$'\t' -k6,6 "$SEL_TMP")
+    RESULT="${RESULT}$(printf '%s|%s|%s|%s\n' "$ln" "$s" "$c" "$p")
+"
+  done < <(sort -u -t"$FS" -k6,6 "$SEL_TMP")
   rm -f "$SEL_TMP" "$ALIAS_TMP"
-  [ -n "$RESULT" ] || { info "manifest resolves to zero skills — nothing to link"; }
+  [ -n "$RESULT" ] || info "manifest resolves to zero skills — nothing to link"
 }
 
 # ---------------------------------------------------------------- commands
@@ -261,12 +259,11 @@ cmd_link() {
   mkdir -p .roo/skills
   local lock=".roo/skills.lock"
   local tmp="$lock.tmp"
-  {
-    echo "# generated by skill-repo link $(date -u +%Y-%m-%dT%H:%M:%SZ) — do not edit"
-  } > "$tmp"
-  while IFS=$'\t' read -r lnk src cat path; do
+  echo "# generated by skill-repo link $(date -u +%Y-%m-%dT%H:%M:%SZ) — do not edit" > "$tmp"
+  local lnk src cat path dest rel commit ts aliased
+  while IFS="$FS" read -r lnk src cat path; do
     [ -n "${lnk:-}" ] || continue
-    local dest=".roo/skills/$lnk"
+    dest=".roo/skills/$lnk"
     if [ -L "$dest" ]; then
       :
     elif [ -e "$dest" ]; then
@@ -274,20 +271,21 @@ cmd_link() {
         rm -f "$tmp"
         die "$dest exists and is not a hub link — rerun with --force to move it aside"
       fi
-      local ts; ts="$(date +%Y%m%d%H%M%S)"
+      ts="$(date +%Y%m%d%H%M%S)"
       mv "$dest" "$dest.pre-hub-$ts"
       warn "moved aside: $dest -> $dest.pre-hub-$ts"
     fi
-    local rel; rel="$(realpath --relative-to=".roo/skills" "$path")"
+    rel="$(realpath --relative-to=".roo/skills" "$path")"
     ln -sfn "$rel" "$dest"
-    local commit="-" dirty=""
+    commit="-"
     if commit="$(git -C "$path" rev-parse --short=7 HEAD 2>/dev/null)"; then
-      [ -n "$(git -C "$path" status --porcelain -- "$path" 2>/dev/null)" ] && dirty="-dirty"
-      commit="$commit$dirty"
+      if [ -n "$(git -C "$path" status --porcelain -- "$path" 2>/dev/null)" ]; then
+        commit="$commit-dirty"
+      fi
     else
       commit="-"
     fi
-    local aliased=false
+    aliased=false
     [ "$lnk" != "$(basename "$path")" ] && aliased=true
     printf '%s:\n  source: %s\n  category: %s\n  path: %s\n  commit: %s\n  aliased: %s\n' \
       "$lnk" "$src" "${cat:-.}" "${path#"$HUB"/}" "$commit" "$aliased" >> "$tmp"
@@ -296,8 +294,8 @@ cmd_link() {
   mv "$tmp" "$lock"
 
   if [ "$PRUNE" = 1 ]; then
-    local names; names="$(printf '%s\n' "$RESULT" | cut -f1)"
-    local l t name
+    local names l t name
+    names="$(printf '%s' "$RESULT" | cut -d"$FS" -f1)"
     for l in .roo/skills/*; do
       [ -L "$l" ] || continue
       t="$(readlink -f "$l" 2>/dev/null)" || continue
@@ -313,68 +311,77 @@ cmd_link() {
 
 cmd_list() {
   load_sources; build_index
-  local lock=".roo/skills.lock"
-  if [ -f "$lock" ]; then
-    sed -n '2,$p' "$lock"
+  if [ -f ".roo/skills.lock" ]; then
+    sed -n '2,$p' .roo/skills.lock
   else
     info "no lockfile — nothing linked yet"
   fi
   if [ -f ".roo/skills.yml" ]; then
     read_manifest; resolve
-    printf '%s\n' "$RESULT" | awk -F'\t' '{printf "%-28s <- %s/%s%s\n", $1, $2, ($3==""?"":$3"/"), $4}'
+    printf '%s' "$RESULT" | awk -F"$FS" -v hub="$HUB" \
+      '{ sub("^" hub "/", "", $4); printf "%-28s <- %s/%s%s\n", $1, $2, ($3 == "" ? "" : $3 "/"), $4 }'
   fi
 }
 
 cmd_search() {
   [ -n "${1:-}" ] || die "usage: skill-repo search <term>"
   load_sources; build_index
-  printf '%s\n' "$INDEX" | awk -F'\t' -v t="${1,,}" '
-    { low=tolower($1"/"$2"/"$3" "$5); idx=index(low, t) }
-    idx { printf "%-14s %-28s %s\n", $1, ($2=="" ? $3 : $2"/"$3), substr($5,1,70) }
+  printf '%s\n' "$INDEX" | awk -F"$FS" -v t="${1,,}" '
+    { low = tolower($1"/"$2"/"$3" "$5) }
+    index(low, t) { printf "%-12s %-38s %s\n", $1, ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66) }
   ' || true
 }
 
 cmd_verify() {
   load_sources; build_index
   local fails=0
-  while IFS=$'\t' read -r s c i u d p; do
+  local s c i u d p fmname
+  while IFS="$FS" read -r s c i u d p; do
     [ -n "${s:-}" ] || continue
-    [ -f "$p/SKILL.md" ] || { echo "verify: missing SKILL.md: $p" >&2; fails=$((fails+1)); }
+    if [ ! -f "$p/SKILL.md" ]; then
+      echo "verify: missing SKILL.md: $p" >&2; fails=$((fails+1)); continue
+    fi
     [ -n "$d" ] || warn "no description: $s/${c:+$c/}$i"
-    fmname="$(grep -m1 '^name:' "$p/SKILL.md" 2>/dev/null | sed -e 's/^name:[[:space:]]*//' -e 's/\"//g')"
-    [ -n "$fmname" ] && [ "$fmname" != "$i" ] && warn "frontmatter name '$fmname' != dir id '$i' ($s/${c:+$c/}$i)"
+    fmname="$(grep -m1 '^name:' "$p/SKILL.md" 2>/dev/null | sed -e 's/^name:[[:space:]]*//' -e 's/"//g')"
+    if [ -n "$fmname" ] && [ "$fmname" != "$i" ]; then
+      warn "frontmatter name '$fmname' != dir id '$i' ($s/${c:+$c/}$i)"
+    fi
   done <<< "$INDEX"
-  if [ -d ".roo/skills" ] && [ -f ".roo/skills.yml" ]; then
+
+  if [ -f ".roo/skills.yml" ]; then
     read_manifest; resolve
-    # frontmatter-name collisions across the linked set
-    cut_names="$(mktemp)"
-    while IFS=$'\t' read -r lnk src cat path; do
+    local names_tmp; names_tmp="$(mktemp)"
+    local lnk src cat path
+    while IFS="$FS" read -r lnk src cat path; do
       [ -n "${lnk:-}" ] || continue
-      grep -m1 '^name:' "$path/SKILL.md" 2>/dev/null | sed -e 's/^name:[[:space:]]*//' -e 's/\"//g' >> "$cut_names"
-      [ -e ".roo/skills/$lnk/SKILL.md" ] || { echo "verify: broken link: $lnk" >&2; fails=$((fails+1)); }
+      if [ ! -e ".roo/skills/$lnk/SKILL.md" ]; then
+        echo "verify: broken or missing link: $lnk (run 'skill-repo link')" >&2; fails=$((fails+1))
+      fi
+      grep -m1 '^name:' "$path/SKILL.md" 2>/dev/null \
+        | sed -e 's/^name:[[:space:]]*//' -e 's/"//g' >> "$names_tmp"
     done <<< "$RESULT"
-    if [ "$(sort "$cut_names" | uniq -d | wc -l)" -gt 0 ]; then
-      echo "verify: duplicate frontmatter names in linked set:" >&2
-      sort "$cut_names" | uniq -d >&2
+    if [ "$(sort "$names_tmp" | uniq -d | wc -l)" -gt 0 ]; then
+      echo "verify: duplicate frontmatter names in linked set (aliases cannot fix this):" >&2
+      sort "$names_tmp" | uniq -d >&2
       fails=$((fails+1))
     fi
-    rm -f "$cut_names"
+    rm -f "$names_tmp"
   fi
-  [ "$fails" -eq 0 ] && info "verify: OK" || { echo "skill-repo: verify: $fails failure(s)" >&2; exit 3; }
+  if [ "$fails" -eq 0 ]; then info "verify: OK"; else
+    echo "skill-repo: verify: $fails failure(s)" >&2; exit 3
+  fi
 }
 
 ensure_repo() { # $1=relative dir, $2=optional url
   local dir="$HUB/$1"
   if [ -d "$dir/.git" ]; then info "setup: $1 exists"; return 0; fi
   if [ -n "${2:-}" ]; then
-    git clone "${2}" "$dir" || die "clone failed: $2"
+    git clone "$2" "$dir" || die "clone failed: $2"
   else
     mkdir -p "$dir/skills"
     git -C "$dir" init -q -b main
     printf '# %s skills\n\nLayout: skills/<category>/<skill>/SKILL.md — see the hub README.\n' "$1" > "$dir/README.md"
-    git -C "$dir" add -A && git -C "$dir" -c user.name="${GIT_AUTHOR_NAME:-$(id -un)}" \
-      -c user.email="${GIT_AUTHOR_EMAIL:-$(id -un)@localhost}" \
-      commit -qm "init: skills repo scaffold" || true
+    git -C "$dir" add -A && git -C "$dir" commit -qm "init: skills repo scaffold"
   fi
 }
 
@@ -384,7 +391,8 @@ registry_append() { # $1=name $2=path
 }
 
 cmd_setup() {
-  local personal_url="" team_specs=()
+  local personal_url="" t name url
+  local team_specs=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --personal) personal_url="${2:-}"; shift 2 ;;
@@ -396,7 +404,6 @@ cmd_setup() {
   [ "${#team_specs[@]}" -eq 0 ] && team_specs=("$DEFAULT_TEAM")
 
   ensure_repo personal "$personal_url"
-  local t name url
   for t in "${team_specs[@]}"; do
     name="${t%%=*}"; url=""
     [[ "$t" == *=* ]] && url="${t#*=}"
@@ -406,7 +413,7 @@ cmd_setup() {
   if [ ! -f "$SOURCES_YML" ]; then
     cp "$SOURCES_TEMPLATE" "$SOURCES_YML"
   else
-    while IFS=$'\t' read -r n p _; do
+    while IFS="$FS" read -r n p _; do
       [ -n "${n:-}" ] || continue
       registry_append "$n" "$p"
     done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
@@ -436,18 +443,21 @@ cmd_setup() {
 
 cmd_update() {
   load_sources
-  while IFS=$'\t' read -r name path root remote untrusted; do
-    [ -n "${name:-}" ] || [ -n "${remote:-}" ] || continue
+  local name path root remote untrusted dir
+  while IFS="$FS" read -r name path root remote untrusted; do
+    [ -n "${name:-}" ] || continue
     [ -n "${remote:-}" ] || continue
-    local dir="$HUB/$path"
-    [ -d "$dir/.git" ] || { warn "update: '$name' has remote but no clone at $dir"; continue; }
-    if ! git -C "$dir" diff --quiet HEAD 2>/dev/null || [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+    dir="$HUB/$path"
+    if [ ! -d "$dir/.git" ]; then warn "update: '$name' has remote but no clone at $dir"; continue; fi
+    if ! git -C "$dir" diff --quiet HEAD 2>/dev/null \
+       || [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
       warn "update: '$name' is dirty — skipped"; continue
     fi
-    git -C "$dir" fetch --quiet "$remote" 2>/dev/null \
-      && git -C "$dir" pull --ff-only --quiet \
-      && info "update: $name updated" \
-      || warn "update: $name failed (fetch/ff-only) — skipped"
+    if git -C "$dir" fetch --quiet 2>/dev/null && git -C "$dir" pull --ff-only --quiet 2>/dev/null; then
+      info "update: $name updated"
+    else
+      warn "update: $name failed (fetch/ff-only) — skipped"
+    fi
   done <<< "$SRC_LINES"
 }
 
@@ -458,7 +468,7 @@ cmd_add_remote() {
       --name) name="${2:-}"; shift 2 ;;
       --root) root="${2:-}"; shift 2 ;;
       -*) die "add-remote: unknown option $1" ;;
-      *)  [ -z "$url" ] && url="$1" || die "add-remote: unexpected arg $1" ; shift ;;
+      *)  [ -z "$url" ] && url="$1" || die "add-remote: unexpected arg $1"; shift ;;
     esac
   done
   [ -n "$url" ] || die "usage: skill-repo add-remote <url> [--name NAME] [--root PATH]"
@@ -468,14 +478,12 @@ cmd_add_remote() {
   local dir="$HUB/external/$name"
   [ -d "$dir" ] && die "$dir already exists"
   git clone --depth 1 "$url" "$dir" || die "clone failed"
-  if [ -z "$root" ]; then
-    if [ -d "$dir/skills" ]; then root="skills"; else root="."; fi
-  fi
+  [ -z "$root" ] && { if [ -d "$dir/skills" ]; then root="skills"; else root="."; fi; }
   printf '  - name: %s\n    path: external/%s\n    root: %s\n    remote: %s\n    untrusted: true\n' \
     "$name" "$name" "$root" "$url" >> "$SOURCES_YML"
-  info "added external source '$name' (root: $root) as UNTRUSTED. Preview:"
+  info "added external source '$name' (root: $root) as UNTRUSTED. Skills found:"
   load_sources; build_index
-  printf '%s\n' "$INDEX" | awk -F'\t' -v s="$name" '$1==s {printf "  %-14s %s\n", ($2==""?$3:$2"/"$3), substr($5,1,70)}'
+  printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$name" '$1 == s {printf "  %-38s %s\n", ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66)}'
 }
 
 cmd_promote() {
@@ -497,13 +505,13 @@ case "$CMD" in
       esac
     done
     cmd_link ;;
-  list)     cmd_list "$@" ;;
-  search)   cmd_search "$@" ;;
-  verify)   cmd_verify ;;
-  setup)    cmd_setup "$@" ;;
-  update)   cmd_update ;;
+  list)       cmd_list "$@" ;;
+  search)     cmd_search "$@" ;;
+  verify)     cmd_verify ;;
+  setup)      cmd_setup "$@" ;;
+  update)     cmd_update ;;
   add-remote) cmd_add_remote "$@" ;;
-  promote)  cmd_promote "$@" ;;
+  promote)    cmd_promote "$@" ;;
   -h|--help|help|'') usage ;;
   *) die "unknown command: $CMD (see --help)" ;;
 esac
