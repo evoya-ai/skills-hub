@@ -65,7 +65,7 @@ Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
 | `verify` | check registry, links, frontmatter uniqueness |
 | `update` | fetch + ff-only pull for sources with a `remote` |
 | `add-remote <url> [--name N] [--root P]` | register an external collection (marked untrusted) |
-| `promote <ref> <target-source>/<category>` | copy a skill across sources (not implemented yet) |
+| `promote [--force] <ref\|path> <source>/<category>` | copy a skill (any dir with `SKILL.md`, or a hub ref) into a content repo: scans for secrets/emails/paths, stages it — commit/review is yours; `--force` backs up the old copy to `.promote-backup/` |
 
 ## Trust classes
 

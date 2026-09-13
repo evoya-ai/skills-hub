@@ -32,7 +32,9 @@ Commands (run from a project dir unless noted):
   verify
   update
   add-remote <url> [--name NAME] [--root PATH]
-  promote <ref> <source>/<category>    (not implemented yet)
+  promote [--force] <ref|path> <source>/<category>   (any dir)
+                                          copy a skill into a content repo,
+                                          scan + stage it — commit is yours
 EOF
 }
 
@@ -486,8 +488,113 @@ cmd_add_remote() {
   printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$name" '$1 == s {printf "  %-38s %s\n", ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66)}'
 }
 
+promote_scan() { # $1=dir — trust-boundary content scan; sets SCAN_HITS
+  local d="$1"; SCAN_HITS=0
+  local out
+  ps_one() { # $1=label $2=include-regex $3=exclude-regex(optional)
+    out="$(grep -rInE -- "$2" "$d" 2>/dev/null || true)"
+    if [ -n "${3:-}" ] && [ -n "$out" ]; then
+      out="$(printf '%s\n' "$out" | grep -vE -- "$3" || true)"
+    fi
+    if [ -n "$out" ]; then
+      SCAN_HITS=$(( SCAN_HITS + $(printf '%s\n' "$out" | wc -l) ))
+      printf '%s\n' "$out" | sed -e "s|^$d/*||" -e "s|^|promote-scan [$1] |" >&2
+    fi
+  }
+  ps_one credential '(sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|gh[pousr]_[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{10,})' ''
+  ps_one cred-url   '[a-z][a-z0-9+.-]*://[^/@: ]+:[^/@ ]+@' ''
+  ps_one email      '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' '(example\.|@test\.|\.noreply\.|xxx)'
+  ps_one ip         '([0-9]{1,3}\.){3}[0-9]{1,3}' '(0\.0\.0\.0|127\.0\.0\.1|255\.255\.255\.255|8\.8\.8\.8|1\.1\.1\.1)'
+  ps_one home-path  '/home/[A-Za-z0-9._-]+' '/home/django'
+}
+
 cmd_promote() {
-  die "promote: not implemented yet (copy manually + 'git -C <target> add', review before push)"
+  local force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --force) force=1; shift ;;
+      -*)      die "promote: unknown option $1" ;;
+      *)       break ;;
+    esac
+  done
+  [ $# -eq 2 ] || die "usage: skill-repo promote [--force] <ref|path> <source>/<category>"
+  local ref="$1" target="$2"
+  load_sources; build_index
+
+  # ---- source: a directory with SKILL.md, or a ref resolved via the index
+  local srcdir="" m first path src id
+  if [ -d "$ref" ]; then
+    [ -f "$ref/SKILL.md" ] || die "promote: '$ref' is a directory but has no SKILL.md"
+    srcdir="$(cd "$ref" && pwd)"
+  else
+    first="${ref%%/*}"; path="$ref"; src=""
+    if is_source_name "$first"; then src="$first"; path="${ref#*/}"; fi
+    id="${path##*/}"
+    [ -n "$id" ] || die "promote: cannot derive a skill id from '$ref'"
+    if [ -n "$src" ]; then
+      m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$src" -v i="$id" '($1 == s) && ($3 == i)')"
+    else
+      m="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v i="$id" '$3 == i')"
+    fi
+    [ -n "$m" ] || die "promote: '$ref' is not a skill dir and not a known skill (try: skill-repo search ${ref##*/})"
+    if [ "$(printf '%s\n' "$m" | wc -l)" -gt 1 ]; then
+      conflict "promote: '$ref' matches several skills — qualify as <source>/<category>/<id>:
+$m"
+    fi
+    srcdir="$(printf '%s\n' "$m" | awk -F"$FS" '{print $6}')"
+  fi
+  id="$(basename "$srcdir")"
+
+  # ---- target: registered source + category path
+  local tsrc="${target%%/*}" tcat=""
+  if [ "$tsrc" != "$target" ]; then tcat="${target#*/}"; fi
+  is_source_name "$tsrc" || die "promote: target source '$tsrc' is not registered (known: $(printf '%s\n' "$SRC_LINES" | cut -d"$FS" -f1 | paste -sd, -))"
+  local tpath="" troot="." tuntrusted="false"
+  while IFS="$FS" read -r n p r _rem unt; do
+    if [ "$n" = "$tsrc" ]; then tpath="$HUB/$p"; troot="${r:-.}"; tuntrusted="$unt"; break; fi
+  done <<< "$SRC_LINES"
+  [ "$tuntrusted" = "true" ] && die "promote: '$tsrc' is an untrusted external clone — promote into personal/ or a team repo"
+  [ -d "$tpath/.git" ] || die "promote: target '$tsrc' is not a git repo ($tpath)"
+  if [ -n "$tcat" ]; then
+    local seg ok=1
+    while IFS= read -r seg; do
+      [[ "$seg" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || ok=0
+    done < <(printf '%s\n' "$tcat" | tr '/' '\n')
+    [ "$ok" = 1 ] || die "promote: invalid category '$tcat'"
+  fi
+  local scanroot="$tpath"; [ "$troot" != "." ] && scanroot="$tpath/$troot"
+  local dest="$scanroot/$tcat/$id"
+  local gitpath="$tcat/$id"; [ "$troot" != "." ] && gitpath="$troot/$gitpath"
+  [ "$srcdir" = "$dest" ] && die "promote: source and target are the same directory"
+
+  # ---- collision: refuse, or back up outside the repo (--force)
+  if [ -e "$dest" ]; then
+    if [ "$force" != 1 ]; then
+      die "promote: '$tsrc/$tcat/$id' already exists — rerun with --force to replace (old copy is backed up outside the repo)"
+    fi
+    local bts bdir
+    bts="$(date +%Y%m%d%H%M%S)"
+    bdir="$HUB/.promote-backup/$tsrc-$id-$bts"
+    mkdir -p "$bdir"
+    mv "$dest" "$bdir/"
+    warn "promote: existing copy moved aside (NOT committed anywhere): $bdir"
+  fi
+
+  # ---- copy, scan, stage — commit/review stays with the human (spec 8.1)
+  mkdir -p "$(dirname "$dest")"
+  cp -a "$srcdir" "$dest"
+  [ -f "$dest/SKILL.md" ] || die "promote: internal error — copy has no SKILL.md"
+  promote_scan "$dest"
+  git -C "$tpath" add "$gitpath"
+  info "promoted: $id"
+  info "  from:  $srcdir"
+  info "  to:    ${tpath#"$HUB"/}/$gitpath (staged, NOT committed)"
+  if [ "${SCAN_HITS:-0}" -gt 0 ]; then
+    warn "promote: $SCAN_HITS content finding(s) printed above — review before committing (trust boundary: check secrets, emails, company terms, machine paths)"
+  else
+    info "scan:   no credential/email/IP/home-path findings"
+  fi
+  info "next:   git -C '${tpath#"$HUB"/}' diff --cached --stat  &&  git -C '${tpath#"$HUB"/}' commit"
 }
 
 # ---------------------------------------------------------------- main
