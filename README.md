@@ -66,6 +66,7 @@ Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
 | `update` | fetch + ff-only pull for sources with a `remote` |
 | `add-remote <url> [--name N] [--root P]` | register an external collection (marked untrusted) |
 | `promote [--force] <ref\|path> <source>/<category>` | copy a skill (any dir with `SKILL.md`, or a hub ref) into a content repo: literal content scan, staged via git (never commits); `--force` replaces via git history (disk backup only for uncommitted changes) |
+| `where [<ref>] [--prune]` | reverse lookup: which projects link a skill (or all consumers). Based on `.link-roots` (self-registered at `link` time, hub-local) + each project's `skills.lock`. `--prune` reaps stale roots |
 
 ## Trust classes
 

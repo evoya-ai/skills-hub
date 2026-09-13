@@ -35,6 +35,9 @@ Commands (run from a project dir unless noted):
   promote [--force] <ref|path> <source>/<category>   (any dir)
                                           copy a skill into a content repo,
                                           scan + stage it — commit is yours
+  where [<ref>] [--prune]              (anywhere) reverse lookup: which
+                                          projects link a skill (or, without
+                                          a ref, all known consumers)
 EOF
 }
 
@@ -309,6 +312,22 @@ cmd_link() {
     done
   fi
   info "linked $n skill(s) -> .roo/skills (lock: .roo/skills.lock)"
+  link_roots_register
+}
+
+# ------------------------------------------------------------ link roots
+# Hints-only registry of projects that linked from this hub (hub-local,
+# gitignored, one absolute project path per line). The lockfiles are the
+# truth; this list only says where to look.
+
+link_roots_register() {
+  local roots="$HUB/.link-roots" proj
+  proj="$(pwd)"
+  touch "$roots"
+  if grep -qxF "$proj" "$roots"; then :; else
+    printf '%s\n' "$proj" >> "$roots"
+    info "registered consumer in $roots"
+  fi
 }
 
 cmd_list() {
@@ -508,6 +527,66 @@ promote_scan() { # $1=dir — trust-boundary content scan; sets SCAN_HITS
   ps_one home-path  '/home/[A-Za-z0-9._-]+' '/home/django'
 }
 
+cmd_where() {
+  local prune=0 ref=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --prune) prune=1; shift ;;
+      -*)      die "where: unknown option $1" ;;
+      *)       ref="$1"; shift ;;
+    esac
+  done
+  local name=""
+  [ -n "$ref" ] && name="${ref##*/}"
+  local roots="$HUB/.link-roots"
+  if [ ! -s "$roots" ]; then
+    info "where: no consumers registered yet — projects register themselves on 'skill-repo link'"
+    return 0
+  fi
+  local proj lock out found=0 stale=0 kept
+  kept="$(mktemp)"
+  while IFS= read -r proj; do
+    [ -n "$proj" ] || continue
+    lock="$proj/.roo/skills.lock"
+    if [ ! -f "$lock" ]; then
+      stale=$((stale+1))
+      if [ "$prune" = 1 ]; then
+        warn "where: pruning stale root: $proj"
+      else
+        warn "where: stale root (no lock — project moved/deleted?): $proj"
+        printf '%s\n' "$proj" >> "$kept"
+      fi
+      continue
+    fi
+    printf '%s\n' "$proj" >> "$kept"
+    if [ -n "$name" ]; then
+      out="$(awk -v n="$name" '
+        $0 == n ":" { inb = 1; next }
+        inb && /^[^[:space:]]/ { inb = 0 }
+        inb && /^  (source|category|path|commit|aliased):/ { print "    " $0 }
+      ' "$lock")"
+      if [ -n "$out" ]; then
+        found=$((found+1))
+        info "$proj"
+        printf '%s\n' "$out"
+      fi
+    else
+      info "$proj ($(grep -c '^[A-Za-z0-9][A-Za-z0-9-]*:' "$lock") skill(s))"
+    fi
+  done < "$roots"
+  if [ "$prune" = 1 ]; then
+    sort -u "$kept" > "$roots"
+  fi
+  rm -f "$kept"
+  if [ -n "$name" ]; then
+    if [ "$found" -eq 0 ]; then
+      info "where: no project links '$name' (among $(wc -l < "$roots") registered)"
+    else
+      info "where: '$name' linked in $found project(s)"
+    fi
+  fi
+}
+
 cmd_promote() {
   local force=0
   while [ $# -gt 0 ]; do
@@ -625,6 +704,7 @@ case "$CMD" in
   update)     cmd_update ;;
   add-remote) cmd_add_remote "$@" ;;
   promote)    cmd_promote "$@" ;;
+  where)      cmd_where "$@" ;;
   -h|--help|help|'') usage ;;
   *) die "unknown command: $CMD (see --help)" ;;
 esac

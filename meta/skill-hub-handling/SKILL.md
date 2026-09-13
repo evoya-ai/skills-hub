@@ -30,6 +30,14 @@ When the user asks for a capability and no loaded skill covers it:
 
 Never hand-create a skill in a project when the hub already has one.
 
+## Reverse lookup: who consumes a skill?
+
+`~/workspaces/skill-hub/bin/skill-repo where [<id>]` — every project that
+links the skill (with source and commit), or the full consumer map without
+an id. Projects self-register at `link` time. Run it BEFORE `promote
+--force` to know the blast radius of a replacement, and when auditing who
+is affected by a skill change.
+
 ## Write path: promote a skill into the hub
 
 Skills are improved where they are used (in projects) and flow back:
