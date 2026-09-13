@@ -82,6 +82,23 @@ across a trust boundary (personal→team, external→anything):
 5. **Commit** the staged change with a message naming what was promoted
      and any scrubbing you did. The git history is the audit trail.
 
+### Editing a linked skill (write-through)
+
+A project link IS the hub directory (symlink). Editing anything through
+it — SKILL.md, a script in `references/` or `assets/` — modifies the
+single shared copy: the change lands as an UNCOMMITTED modification in
+the content repo and is instantly visible to every project linking that
+skill. Nothing is committed automatically.
+
+After editing through a link:
+1. Commit the change in the content repo
+   (`git -C ~/workspaces/skill-hub/personal …` or `…/teams/<team>`),
+   applying the same review discipline as promote when the content is
+   sensitive.
+2. Re-run `~/workspaces/skill-hub/bin/skill-repo link` in the project to
+   refresh the lockfile's commit SHAs (a link made while a skill dir is
+   dirty records a `-dirty` commit).
+
 ### The loop
 
 promote up (copy into hub) → link down (symlink into project). Once a
