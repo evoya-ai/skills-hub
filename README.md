@@ -51,22 +51,33 @@ across a trust boundary. You say "we need a data-table skill here" or
 | `list` / `verify` | this project's links, drift, frontmatter sanity |
 | `setup` / `update` / `add-remote` | hub bootstrap, ff-only pulls, register external collections |
 
+## Trust rules 🛡️
+
+- `personal/` never leaves your machine unless you give it a private remote.
+- `shared/<name>/` is shared via its own remote. Anything crossing a
+  personal → shared passes a review first: secrets, real emails, company
+  terms, machine-specific paths. The promote checklist in
+  `skill-hub-handling` is the control; the agent operating it owns that
+  check.
+- `external/*` is untrusted prompt content. Bulk-linking from it is
+  refused; individual skills only, and only after a human said yes.
+
 ## Web UI 👀
 
 ```bash
 ./start            # serves http://127.0.0.1:8765 and opens a browser tab
 ```
 
-Stdlib-only Python (`app/`): a live view of the hub — sources with remotes,
-every skill (with its rendered `SKILL.md`), and which projects link what
-(`--dummy` serves prototype fake data; the scan refreshes every few seconds).
+Stdlib-only Python (`app/`), no build step: a live view of the hub — sources
+with remotes, every skill (with its rendered `SKILL.md`), and which projects
+link what.
 
-| File | Purpose |
-|---|---|
-| `app/server.py` | `http.server` + tiny JSON API, opens the browser |
-| `app/scanner.py` | reads `sources.yml`, `SKILL.md` files, `.link-roots` + `skills.lock` |
-| `app/static/` | vanilla HTML/CSS/JS, no build step |
-| `app/qa/smoke.py` | Playwright smoke test + screenshots (`uv run --with playwright python app/qa/smoke.py`) |
+<p align="center">
+  <a href="docs/screenshot.png" target="_blank">
+    <img src="docs/screenshot.png" width="860"
+         alt="Skills Hub web UI: stat pills, the hub layout tree, and a source card with skill entries, descriptions and the projects linking them">
+  </a>
+</p>
 
 ## Setup 🚀
 
@@ -129,17 +140,6 @@ Inside your own repos, a skill sits at
 `skills/saas-pegasus/data-table`. Third-party collections under
 `external/` may look however their authors made them; the scanner copes
 with any layout.
-
-## Trust rules 🛡️
-
-- `personal/` never leaves your machine unless you give it a private remote.
-- `shared/<name>/` is shared via its own remote. Anything crossing
-  personal → shared passes a review first: secrets, real emails, company
-  terms, machine-specific paths. The promote checklist in
-  `skill-hub-handling` is the control; the agent operating it owns that
-  check.
-- `external/*` is untrusted prompt content. Bulk-linking from it is
-  refused; individual skills only, and only after a human said yes.
 
 ## Moving or renaming a skill 🚚
 

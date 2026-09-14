@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Skills Hub UI — one-command start. Serves the app and opens the browser.
+# Options: --port N  --host H  --no-browser  (passed through to the server)
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+exec python3 app/server.py "$@"
