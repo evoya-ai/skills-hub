@@ -12,7 +12,6 @@ SOURCES_YML="$HUB/sources.yml"
 SOURCES_TEMPLATE="$HUB/sources.template.yml"
 GLOBAL_SKILLS="$HOME/.roo/skills"
 FINDER="skill-hub-handling"
-DEFAULT_SHARED="evoya"   # default shared repo (was: DEFAULT_TEAM / teams/)
 FS='|'
 
 die()      { echo "skill-repo: error: $*" >&2; exit 1; }
@@ -26,6 +25,9 @@ skill-repo — link Roo skills from the hub into this project
 
 Commands (run from a project dir unless noted):
   setup [--personal <url>] [--shared <name>[=<url>]] (run in hub)
+  attach <name> <url>     (run in hub) wire a source to its real remote —
+                                           clone if missing, adopt an untouched
+                                           scaffold, refuse real content
   link [--prune] [--force] [--allow-untrusted]
   list
   search <term>
@@ -423,16 +425,19 @@ ensure_repo() { # $1=relative dir, $2=optional url
     mkdir -p "$dir/skills"
     git -C "$dir" init -q -b main
     printf '# %s skills\n\nLayout: skills/<category>/<skill>/SKILL.md — see the hub README.\n' "$1" > "$dir/README.md"
+    # NOTE: the commit message below is a behavioral contract —
+    # is_untouched_scaffold (attach) detects scaffolds by it. Change both or neither.
     git -C "$dir" add -A && git -C "$dir" commit -qm "init: skills repo scaffold"
     info "setup: created $1/ (git repo, skills/ scaffold, initial commit)"
   fi
 }
 
-registry_append() { # $1=name $2=path — rc 0: appended, rc 1: already registered
+registry_append() { # $1=name $2=path [$3=remote] — rc 0: appended, rc 1: already registered
   if grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*\"?${1}\"?[[:space:]]*$" "$SOURCES_YML" 2>/dev/null; then
     return 1
   fi
   printf '  - name: %s\n    path: %s\n    root: skills\n' "$1" "$2" >> "$SOURCES_YML"
+  [ -n "${3:-}" ] && printf '    remote: %s\n' "$3" >> "$SOURCES_YML"
 }
 
 cmd_setup() {
@@ -447,7 +452,6 @@ cmd_setup() {
       *) die "setup: unknown option: $1" ;;
     esac
   done
-  if [ "${#shared_specs[@]}" -eq 0 ]; then shared_specs=("$DEFAULT_SHARED"); fi
 
   ensure_repo personal "$personal_url"
   for t in "${shared_specs[@]}"; do
@@ -465,8 +469,9 @@ cmd_setup() {
     if registry_append "$n" "$p"; then info "setup: sources.yml: registered '$n' ($p)"; fi
   done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
   for t in "${shared_specs[@]}"; do
-    name="${t%%=*}"
-    if registry_append "$name" "shared/$name"; then info "setup: sources.yml: registered '$name' (shared/$name)"; fi
+    name="${t%%=*}"; url=""
+    if [[ "$t" == *=* ]]; then url="${t#*=}"; fi
+    if registry_append "$name" "shared/$name" "$url"; then info "setup: sources.yml: registered '$name' (shared/$name)"; fi
   done
   if registry_append personal personal; then info "setup: sources.yml: registered 'personal' (personal/)"; fi
 
@@ -548,6 +553,115 @@ cmd_add_remote() {
   info "added external source '$name' (root: $root) as UNTRUSTED. Skills found:"
   load_sources; build_index
   printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$name" '$1 == s {printf "  %-38s %s\n", ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66)}'
+}
+
+# ---------------------------------------------------------------- attach
+# Wire a source dir to its real remote (trusted — no untrusted flag; never pushes).
+
+is_untouched_scaffold() { # $1=dir — an ensure_repo() scaffold: nothing to lose
+  git -C "$1" rev-parse --git-dir >/dev/null 2>&1 || return 1
+  [ -z "$(git -C "$1" remote)" ]                                          || return 1  # no remotes
+  [ -z "$(git -C "$1" status --porcelain 2>/dev/null)" ]                  || return 1  # clean tree
+  [ "$(git -C "$1" rev-list --count HEAD 2>/dev/null || echo 0)" -eq 1 ]  || return 1  # single commit
+  [ "$(git -C "$1" log -1 --format=%s)" = "init: skills repo scaffold" ]  || return 1  # the scaffold commit
+  [ -z "$(find "$1" -name .git -prune -o -type f -name SKILL.md -print -quit 2>/dev/null)" ] || return 1  # skills/ empty
+  return 0
+}
+
+registry_set_remote() { # $1=name $2=remote — insert 'remote:' into an existing entry
+  local tmp
+  tmp="$(mktemp)"
+  awk -v name="$1" -v remote="$2" '
+    /^[[:space:]]*-[[:space:]]*name:/ {
+      inent = ($0 ~ "-[[:space:]]*name:[[:space:]]*\"?" name "\"?[[:space:]]*$")
+    }
+    { print }
+    inent && /^[[:space:]]*root:/ { printf "    remote: %s\n", remote; inent = 0 }
+  ' "$SOURCES_YML" > "$tmp" && mv "$tmp" "$SOURCES_YML"
+}
+
+cmd_attach() { # $1=name $2=url
+  local name="${1:-}" url="${2:-}"
+  { [ -n "$name" ] && [ -n "$url" ]; } || die "usage: skill-repo attach <name> <url>"
+  [ $# -le 2 ] || die "attach: unexpected argument(s): ${*:3}"
+  [[ "$name" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "attach: invalid name '$name' (allowed: lowercase, digits, . _ -)"
+  [ -f "$SOURCES_YML" ] || die "no sources.yml in hub — run 'skill-repo setup' first"
+  load_sources
+
+  # dir: registered name -> its registered path (also enables 'attach personal');
+  # unregistered name -> shared/<name>
+  local path="" reg_remote="" registered=0 n p r rem unt
+  while IFS="$FS" read -r n p r rem unt; do
+    [ -n "${n:-}" ] || continue
+    if [ "$n" = "$name" ]; then path="$p"; reg_remote="${rem:-}"; break; fi
+  done <<< "$SRC_LINES"
+  [ -n "$path" ] && registered=1
+  [ -n "$reg_remote" ] && die "attach: source '$name' is already attached to $reg_remote"
+  [ -z "$path" ] && path="shared/$name"
+
+  local dir="$HUB/$path"
+
+  # ---- dir missing: clone (unregistered names only)
+  if [ ! -d "$dir" ]; then
+    [ "$registered" = 1 ] && die "attach: '$name' is registered ($path) but $dir is missing — fix or remove the sources.yml entry"
+    git clone "$url" "$dir" || die "attach: clone failed: $url"
+    local root="."
+    [ -d "$dir/skills" ] && root="skills"
+    printf '  - name: %s\n    path: %s\n    root: %s\n    remote: %s\n' "$name" "$path" "$root" "$url" >> "$SOURCES_YML"
+    info "attach: cloned $url -> $path, registered source '$name' (root: $root, trusted)"
+    load_sources; build_index
+    printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$name" '$1 == s {printf "  %-38s %s\n", ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66)}'
+    info "next: 'skill-repo update' pulls it (ff-only), 'skill-repo search <term>' finds its skills"
+    return 0
+  fi
+
+  # ---- dir exists: must be a git repo without any remote
+  git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || die "attach: $dir exists but is not a git repo"
+  [ -z "$(git -C "$dir" remote)" ] || die "attach: $path already has remote(s): $(git -C "$dir" remote | paste -sd, -) — refusing (adjust manually if intended)"
+
+  if ! is_untouched_scaffold "$dir"; then
+    die "attach: $path has local content/history — refusing to touch it. If the remote is authoritative:
+  git -C $path remote add origin $url
+  git -C $path fetch origin && git -C $path reset --hard origin/<branch>
+…or move $path aside and re-run attach (clone)."
+  fi
+
+  # ---- untouched scaffold: wire it — nothing to lose, no confirmation needed
+  git -C "$dir" remote add origin "$url"
+  git -C "$dir" fetch origin || die "attach: fetch failed for $url (origin was added — fix it or: git -C $path remote remove origin)"
+  git -C "$dir" remote set-head origin --auto >/dev/null 2>&1 || true
+
+  local branch="" branches nb
+  branch="$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || true
+  [ "$branch" = "HEAD" ] && branch=""
+  if [ -z "$branch" ]; then
+    branches="$(git -C "$dir" for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's|^origin/||' | grep -v '^HEAD$' || true)"
+    nb="$(printf '%s\n' "$branches" | grep -c . || true)"
+    if   [ "$nb" = "1" ]; then branch="$branches"
+    elif printf '%s\n' "$branches" | grep -qx main;   then branch="main"
+    elif printf '%s\n' "$branches" | grep -qx master; then branch="master"
+    elif [ "$nb" = "0" ]; then
+      die "attach: $url has no refs — nothing to attach. Pushing a local repo to a fresh remote is a manual, user-confirmed step (see skill-hub-handling). Origin was added; undo with: git -C $path remote remove origin"
+    else
+      die "attach: cannot determine the default branch of $url (candidates: $(printf '%s\n' "$branches" | paste -sd, -)) — wire it manually"
+    fi
+  fi
+
+  local cur
+  cur="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+  if [ "$cur" != "$branch" ]; then git -C "$dir" branch -m "$branch"; fi
+  git -C "$dir" reset --hard -q "origin/$branch"
+  git -C "$dir" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null
+
+  if [ "$registered" = 1 ]; then
+    registry_set_remote "$name" "$url"
+    info "attach: sources.yml: recorded remote for '$name' ($path)"
+  else
+    printf '  - name: %s\n    path: %s\n    root: skills\n    remote: %s\n' "$name" "$path" "$url" >> "$SOURCES_YML"
+    info "attach: sources.yml: registered '$name' ($path) with remote"
+  fi
+  info "attach: $path wired to origin/$branch at $(git -C "$dir" rev-parse --short=7 HEAD), upstream set"
+  info "next: 'skill-repo update' pulls it (ff-only), 'skill-repo search <term>' finds its skills"
 }
 
 promote_scan() { # $1=dir — trust-boundary content scan; sets SCAN_HITS
@@ -746,6 +860,7 @@ case "$CMD" in
   setup)      cmd_setup "$@" ;;
   update)     cmd_update ;;
   add-remote) cmd_add_remote "$@" ;;
+  attach)     cmd_attach "$@" ;;
   promote)    cmd_promote "$@" ;;
   where)      cmd_where "$@" ;;
   -h|--help|help|'') usage ;;

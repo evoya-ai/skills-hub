@@ -7,6 +7,11 @@
 !/sources.template.yml
 !/start
 !/docs/
+!/tests/
+!/tests/**
+/tests/.tmp/
+!/plans/
+!/plans/**
 
 # python bytecode (app/ runs stdlib python; keep the repo clean)
 __pycache__/

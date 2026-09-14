@@ -49,7 +49,7 @@ across a trust boundary. You say "we need a data-table skill here" or
 | `promote [--force] <ref\|path> <source>/<category>` | move a skill into a content repo, scan + stage it — commit is yours |
 | `where [<id>] [--prune]` | reverse lookup: which projects link a skill |
 | `list` / `verify` | this project's links, drift, frontmatter sanity |
-| `setup` / `update` / `add-remote` | hub bootstrap, ff-only pulls, register external collections |
+| `setup` / `update` / `attach` / `add-remote` | hub bootstrap, ff-only pulls, wire shared repos to their remotes, register external collections |
 
 ## Trust rules 🛡️
 
@@ -86,9 +86,21 @@ The hub, once per machine:
 ```bash
 git clone <hub-url> ~/workspaces/skill-hub
 cd ~/workspaces/skill-hub
-./bin/skill-repo setup      # scaffolds personal/ + shared/evoya/, writes sources.yml,
-                            # installs the global skill-hub-handling skill. Idempotent.
+./bin/skill-repo setup      # scaffolds personal/ ONLY, writes sources.yml, installs
+                            # the global skill-hub-handling skill. Idempotent —
+                            # shared repos are opt-in:
+./bin/skill-repo setup --shared evoya=ssh://git@host/evoya-skills.git
+                            # team onboarding one-liner: clone + register in one
+                            # step (--shared evoya with no URL = empty scaffold;
+                            # wire it later: skill-repo attach evoya <url>)
 ```
+
+**Coming from an older hub?** Previous `setup` runs scaffolded a
+`shared/<name>` repo (e.g. evoya) and registered it. Wire such a scaffold to
+its real remote with `./bin/skill-repo attach <name> <url>` — it adopts the
+untouched scaffold and refuses anything with real content. A registered entry
+whose directory you deleted is removed by editing `sources.yml` by hand
+(setup merges, it never prunes).
 
 Per project: don't do this by hand. 🙅 Tell your agent *"link this project
 to the skills hub"* — it inventories the project's skills, maps them to hub

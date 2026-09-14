@@ -6,10 +6,14 @@ sources:
   - name: personal
     path: personal
     root: skills
-  - name: evoya
-    path: shared/evoya
-    root: skills
-  # more shared repos = more sources:
+  # Shared repos are opt-in — created explicitly, never by default:
+  #   setup --shared <name>=<url>    clone + register in one step (team onboarding)
+  #   setup --shared <name>          empty scaffold — wire it later
+  #   skill-repo attach <name> <url> wire/clone + register
+  # - name: evoya
+  #   path: shared/evoya
+  #   root: skills
+  #   remote: ssh://git@example.com/evoya/evoya-skills
   # - name: insign
   #   path: shared/insign
   #   root: skills
