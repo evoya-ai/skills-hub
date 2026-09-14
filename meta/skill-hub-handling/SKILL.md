@@ -66,6 +66,23 @@ no manual steps left to the user:
 7. **Report**: what got linked, what stayed local and why, what looks
    promote-worthy, and where the `.pre-hub-*` backups are.
 
+## Persistence: commit AND push — ask first, then do
+
+Skill content lives in git repos, and content repos can have remotes
+(`personal/` pushes to a private GitHub repo over SSH; shared repos to
+their own hosts). An uncommitted edit through a link is provisional —
+it exists on one disk only and leaves `-dirty` lockfiles behind. So
+whenever you changed hub content (edit through a link, promote, replace,
+delete):
+
+1. **Ask** — propose repo, files, commit message and push target in one
+   confirmation, then wait for the user's yes. Skip asking only when the
+   user already ordered commit+push for this change.
+2. **Commit** — `git -C <content repo> add <paths>` and commit with a
+   message naming what changed and any scrubbing you did.
+3. **Push** — `git -C <content repo> push` when the repo has a remote.
+   No remote → the commit is the end; say so plainly.
+
 ## Write path: promote a skill into the hub
 
 Skills are improved where they are used (in projects) and flow back:
@@ -115,8 +132,10 @@ across a trust boundary (personal→shared, external→anything):
      the TARGET repo (no other team's or person's company name).
 4. **When in doubt, promote to `personal/` first** and tell the user what
      you found; let them decide about promotion to shared/.
-5. **Commit** the staged change with a message naming what was promoted
-     and any scrubbing you did. The git history is the audit trail.
+5. **Commit and push** via the persistence rule above: ask the user,
+   then commit the staged change with a message naming what was promoted
+   and any scrubbing you did, then push if the content repo has a
+   remote. The git history is the audit trail.
 
 ### Editing a linked skill (write-through)
 
@@ -127,10 +146,10 @@ the content repo and is instantly visible to every project linking that
 skill. Nothing is committed automatically.
 
 After editing through a link:
-1. Commit the change in the content repo
-   (`git -C ~/workspaces/skill-hub/personal …` or `…/shared/<name>`),
-   applying the same review discipline as promote when the content is
-   sensitive.
+1. Commit AND push the change in the content repo
+   (`git -C ~/workspaces/skill-hub/personal …` or `…/shared/<name>`) —
+   ask first, per the persistence rule — applying the same review
+   discipline as promote when the content is sensitive.
 2. Re-run `~/workspaces/skill-hub/bin/skill-repo link` in the project to
    refresh the lockfile's commit SHAs (a link made while a skill dir is
    dirty records a `-dirty` commit).
