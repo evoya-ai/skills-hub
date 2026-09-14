@@ -51,6 +51,23 @@ across a trust boundary. You say "we need a data-table skill here" or
 | `list` / `verify` | this project's links, drift, frontmatter sanity |
 | `setup` / `update` / `add-remote` | hub bootstrap, ff-only pulls, register external collections |
 
+## Web UI 👀
+
+```bash
+./start            # serves http://127.0.0.1:8765 and opens a browser tab
+```
+
+Stdlib-only Python (`app/`): a live view of the hub — sources with remotes,
+every skill (with its rendered `SKILL.md`), and which projects link what
+(`--dummy` serves prototype fake data; the scan refreshes every few seconds).
+
+| File | Purpose |
+|---|---|
+| `app/server.py` | `http.server` + tiny JSON API, opens the browser |
+| `app/scanner.py` | reads `sources.yml`, `SKILL.md` files, `.link-roots` + `skills.lock` |
+| `app/static/` | vanilla HTML/CSS/JS, no build step |
+| `app/qa/smoke.py` | Playwright smoke test + screenshots (`uv run --with playwright python app/qa/smoke.py`) |
+
 ## Setup 🚀
 
 The hub, once per machine:
@@ -123,6 +140,19 @@ with any layout.
   check.
 - `external/*` is untrusted prompt content. Bulk-linking from it is
   refused; individual skills only, and only after a human said yes.
+
+## Moving or renaming a skill 🚚
+
+Categories are part of a skill's identity. To move/rename one:
+
+1. `skill-repo where <id>` — who links it? Every consumer breaks
+   silently otherwise (symlinks + manifest refs point at the old path).
+2. `git mv` in the content repo (history follows), commit it — BEFORE
+   relinking, so lockfiles record a clean SHA instead of `-dirty`.
+3. Update each consumer's `.roo/skills.yml` ref to the new
+   `<source>/<category>/<id>`, then run `skill-repo link` there.
+4. Renaming the id itself? Frontmatter `name` must equal the new
+   directory id, and consumers' link names change with it.
 
 ## One warning worth its own heading ⚠️
 
