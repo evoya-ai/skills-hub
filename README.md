@@ -100,9 +100,18 @@ skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
 └── external/<collection>/    # clones of third-party skill repos (gitignored)
 ```
 
-Content repos are independent git repositories, deliberately invisible to
-this one. Skills live at `skills/<category>/<skill>/SKILL.md`; the scanner
-also handles foreign layouts for external collections.
+The actual skills don't live in this repo. They live in **separate git
+repos nested inside it** — `personal/` for your own, `teams/<team>/` for
+each team. Each has its own history and its own remote: `personal/` stays
+on your machine (unless you give it a private one), a team repo gets
+pushed to that team's git host. This repo ignores them on purpose, so
+the toolbox and the content never tangle.
+
+Inside your own repos, a skill sits at
+`skills/<category>/<skill>/SKILL.md` — one category level, like
+`skills/saas-pegasus/data-table`. Third-party collections under
+`external/` may look however their authors made them; the scanner copes
+with any layout.
 
 ## Trust rules 🛡️
 
