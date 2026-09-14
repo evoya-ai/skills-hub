@@ -95,13 +95,6 @@ cd ~/workspaces/skill-hub
                             # wire it later: skill-repo attach evoya <url>)
 ```
 
-**Coming from an older hub?** Previous `setup` runs scaffolded a
-`shared/<name>` repo (e.g. evoya) and registered it. Wire such a scaffold to
-its real remote with `./bin/skill-repo attach <name> <url>` — it adopts the
-untouched scaffold and refuses anything with real content. A registered entry
-whose directory you deleted is removed by editing `sources.yml` by hand
-(setup merges, it never prunes).
-
 Per project: don't do this by hand. 🙅 Tell your agent *"link this project
 to the skills hub"* — it inventories the project's skills, maps them to hub
 skills (or flags ones worth promoting), writes the manifest, links, sets
