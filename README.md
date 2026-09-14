@@ -1,95 +1,109 @@
 # Skills Hub
 
-One clone → all your Roo skills, selected per project, from **personal**,
-**team**, and **external** sources. Each project declares which skills it
-needs in `.roo/skills.yml` and gets them as symlinks — no more skill copies
-drifting across `.roo` folders, and no prompt pollution from skills a
-project doesn't use.
+One place for every agent skill you own. Instead of copies drifting through
+project after project, each skill lives here once, and projects borrow it by
+symlink.
 
-## Layout
+The audit that started this found **161 copies of 73 skills** on one machine.
+Same skills, slightly different versions, none of them aware of the others.
+That is how a fix made in one project quietly never reaches the other five.
 
-```
-skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
-├── bin/skill-repo            # the CLI
-├── meta/skill-hub-handling/   # the ONE global skill (symlinked into ~/.roo/skills by setup)
-├── sources.template.yml      # registry template
-├── sources.yml               # machine-local registry (gitignored, created by setup)
-├── personal/                 # your private skills repo (gitignored here, own git repo)
-├── teams/<team>/             # one shared skills repo per team (gitignored here, own git repo)
-└── external/<collection>/    # clones of third-party skill repos (gitignored here)
-```
+The hub ends that. Edit a skill once, every project that links it gets the
+change. Commit, and you also get a history of what changed and when.
 
-The content repos (`personal/`, `teams/*`, `external/*`) are independent git
-repositories, deliberately gitignored by this repo. Skills live at
-`skills/<category>/<skill>/SKILL.md` inside each content repo; the scanner
-also handles foreign layouts (any category depth) for external collections.
+It is client-independent: a skill is just a directory with a `SKILL.md`, and
+the hub links it into whatever convention your agent client reads. Zoo Code
+(formerly Roo Code) is the first — links land in `.roo/skills/`, which is why
+that path shows up below. OpenCode is the likely next one; adding a client
+means pointing it at the same directories, not forking the hub.
 
-## Quickstart
+## How it works
+
+Two directions, one loop:
+
+- **Down:** a project declares what it needs in `.roo/skills.yml`, and
+  `skill-repo link` turns each entry into a symlink. The lockfile
+  (`.roo/skills.lock`) records which exact state of the hub you got.
+- **Up:** when you improve a skill inside a project, `skill-repo promote`
+  copies it back into the hub, scans it for secrets and stray personal data,
+  and stages it for commit.
+
+You will rarely type these yourself. The global `skill-hub-handling` skill
+teaches your agent the whole loop — search, link, promote, review — including
+the checklist it must run before promoting anything across a trust boundary.
+You say "we need a data-table skill here" or "push this improvement back",
+the agent drives.
+
+The commands, for the record:
+
+| Command | Purpose |
+|---|---|
+| `search <term>` | find skills across all registered sources |
+| `link [--prune] [--force]` | manifest → symlinks + lockfile (idempotent) |
+| `promote [--force] <ref\|path> <source>/<category>` | copy a skill into a content repo, scan + stage it — commit is yours |
+| `where [<id>] [--prune]` | reverse lookup: which projects link a skill |
+| `list` / `verify` | this project's links, drift, frontmatter sanity |
+| `setup` / `update` / `add-remote` | hub bootstrap, ff-only pulls, register external collections |
+
+## Setup
 
 ```bash
-git clone git@github.com:evoya-ai/skills-hub.git ~/workspaces/skill-hub
+git clone <hub-url> ~/workspaces/skill-hub
 cd ~/workspaces/skill-hub
 ./bin/skill-repo setup          # scaffolds personal/ + teams/evoya/, writes sources.yml,
                                 # installs the global skill-hub-handling skill. Idempotent.
 ```
 
-Per project:
+Per project, commit a manifest and link once:
 
 ```yaml
 # <project>/.roo/skills.yml  (commit this file)
-source: evoya                  # optional default source for unqualified entries
+source: evoya                  # optional default for unqualified entries
 categories:
   - evoya/saas-pegasus         # link a whole category
 skills:
-  - data-table                 # single skill (unqualified: must be unique)
-  - external/awesome/code-review as ext-code-review   # alias on collision
+  - data-table                 # single skill (must be unique, or qualify)
+  - personal/design/ui-demo    # source-qualified
 exclude:
-  - seo/seo-drift              # subtract from selection
+  - seo/seo-drift              # subtract from the selection
 ```
 
 ```bash
-~/workspaces/skill-hub/bin/skill-repo link        # creates .roo/skills/<name> symlinks + .roo/skills.lock
+~/workspaces/skill-hub/bin/skill-repo link
 ```
 
 Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
-(commit only the manifest).
+(links and lockfile are machine state; the manifest is the source of truth).
 
-## CLI
+## Layout
 
-| Command | Purpose |
-|---|---|
-| `setup [--personal <url>] [--team <name>[=<url>]]` | scaffold/clone content repos, seed `sources.yml`, install skill-hub-handling |
-| `link [--prune] [--force] [--allow-untrusted]` | manifest → symlinks (idempotent; `--prune` removes stale hub links) |
-| `search <term>` | find skills across all registered sources |
-| `list` | show this project's links + drift vs manifest |
-| `verify` | check registry, links, frontmatter uniqueness |
-| `update` | fetch + ff-only pull for sources with a `remote` |
-| `add-remote <url> [--name N] [--root P]` | register an external collection (marked untrusted) |
-| `promote [--force] <ref\|path> <source>/<category>` | copy a skill (any dir with `SKILL.md`, or a hub ref) into a content repo: literal content scan, staged via git (never commits); `--force` replaces via git history (disk backup only for uncommitted changes) |
-| `where [<ref>] [--prune]` | reverse lookup: which projects link a skill (or all consumers). Based on `.link-roots` (self-registered at `link` time, hub-local) + each project's `skills.lock`. `--prune` reaps stale roots |
+```
+skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
+├── bin/skill-repo            # the CLI (bash, no dependencies)
+├── meta/skill-hub-handling/  # the ONE global skill (symlinked into ~/.roo/skills)
+├── sources.template.yml      # registry template
+├── sources.yml               # machine-local registry (gitignored)
+├── personal/                 # your private skills repo (gitignored here, own git)
+├── teams/<team>/             # one shared skills repo per team (gitignored here)
+└── external/<collection>/    # clones of third-party skill repos (gitignored)
+```
 
-## Trust classes
+Content repos are independent git repositories, deliberately invisible to
+this one. Skills live at `skills/<category>/<skill>/SKILL.md`; the scanner
+also handles foreign layouts for external collections.
 
-- `personal/` — private, never leaves your machine unless you choose a
-  private remote.
-- `teams/<team>/` — shared via the team's own git remote. Moving a skill
-  personal → team crosses a trust boundary: **review for secrets, tokens
-  and machine-specific absolute paths before pushing.**
-- `external/*` — untrusted third-party prompt content. `link` refuses bulk
-  category selection from untrusted sources (individual skills only, unless
-  `--allow-untrusted`).
+## Trust rules, in short
 
-## ⚠ Read this before running git clean
+- `personal/` never leaves your machine unless you give it a private remote.
+- `teams/<team>/` is shared via that team's own remote. Anything crossing
+  personal → team passes a review first: secrets, real emails, company terms,
+  machine-specific paths. The promote checklist in `skill-hub-handling` is
+  the control; the agent operating it owns that check.
+- `external/*` is untrusted prompt content. Bulk-linking from it is refused;
+  individual skills only, and only after a human said yes.
 
-**`git clean -fdX` (or `-fdx`) inside this repo deletes ALL ignored content —
-including `personal/` and `teams/*` clones, with uncommitted work.** Recovery
-is only via the content repos' remotes and your backups. Never `git add -f`
-inside this repo either.
+## One warning worth its own heading
 
-## Status
-
-Phase 2 done (2026-09-13): scaffold + CLI v1 smoke-tested, content repos
-seeded. Skill migration (phase 3) is in progress; its local, gitignored
-working area lives in `migration/` (handoff doc, spec, audit report) —
-start at `migration/HANDOFF.md` if that folder exists on this machine.
-The spec will be promoted into `meta/` once stabilized.
+Do not run `git clean -fdX` in this repo. The content repos live in gitignored
+paths, and that command will delete them without asking. Recovery is possible
+only via remotes and backups — better to never need either.
