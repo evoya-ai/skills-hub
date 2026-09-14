@@ -38,6 +38,32 @@ an id. Projects self-register at `link` time. Run it BEFORE `promote
 --force` to know the blast radius of a replacement, and when auditing who
 is affected by a skill change.
 
+## Onboard a project (you do all of it)
+
+When the user says "link this project to the skills hub" (or you find a
+project with vendored skills that exist in the hub), do the whole flow —
+no manual steps left to the user:
+
+1. **Inventory** `.roo/skills/*/`: for each skill, check the hub
+   (`skill-repo search <id>`). Three outcomes: in hub → link it;
+   generic enough but missing → candidate for promote (run the review
+   below); project-specific → leave local, note it in the manifest
+   comment.
+2. **Back up**: `tar -czf .roo/skills.backup-$(date +%F).tgz -C .roo skills`.
+3. **Write `.roo/skills.yml`** with source-qualified refs for everything
+   you will link.
+4. **Link**: `~/workspaces/skill-hub/bin/skill-repo link --force` —
+   vendored copies move aside as `*.pre-hub-<ts>` (never deleted; tell
+   the user they can remove them once confident).
+5. **Git policy**: ensure `.gitignore` ignores ONLY `.roo/skills.lock`
+   and `.roo/skills.backup-*.tgz`. Do NOT ignore `.roo/skills/` — real
+   project-specific skills live there and must stay tracked; the hub
+   symlinks are relative and are committed alongside them.
+6. **Commit**: `.roo/skills.yml`, the symlinks, and the gitignore change
+   — never the user's unrelated dirty files. Stage paths explicitly.
+7. **Report**: what got linked, what stayed local and why, what looks
+   promote-worthy, and where the `.pre-hub-*` backups are.
+
 ## Write path: promote a skill into the hub
 
 Skills are improved where they are used (in projects) and flow back:

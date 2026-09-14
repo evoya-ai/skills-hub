@@ -23,7 +23,6 @@ flowchart LR
     A -- "link 🔗" --> H
     B -- "link 🔗" --> H
     H -- "edit once →\nlive everywhere ⚡" --> A
-    H -- "same files" --> B
     A -- "promote 🆕\n(new skill)" --> H
 ```
 
@@ -54,6 +53,8 @@ across a trust boundary. You say "we need a data-table skill here" or
 
 ## Setup 🚀
 
+The hub, once per machine:
+
 ```bash
 git clone <hub-url> ~/workspaces/skill-hub
 cd ~/workspaces/skill-hub
@@ -61,10 +62,14 @@ cd ~/workspaces/skill-hub
                             # installs the global skill-hub-handling skill. Idempotent.
 ```
 
-Per project, commit a manifest and link once:
+Per project: don't do this by hand. 🙅 Tell your agent *"link this project
+to the skills hub"* — it inventories the project's skills, maps them to hub
+skills (or flags ones worth promoting), writes the manifest, links, sets
+the git policy below, and commits. This is what it produces, so you can
+read and tweak it:
 
 ```yaml
-# <project>/.roo/skills.yml  (commit this file)
+# <project>/.roo/skills.yml  (committed)
 source: evoya                # optional default for unqualified entries
 categories:
   - evoya/saas-pegasus       # link a whole category
@@ -75,12 +80,13 @@ exclude:
   - seo/seo-drift            # subtract from the selection
 ```
 
-```bash
-~/workspaces/skill-hub/bin/skill-repo link
-```
-
-Recommended per-project `.gitignore`: `.roo/skills/` and `.roo/skills.lock`
-(links and lockfile are machine state; the manifest is the source of truth).
+**Git policy:** commit `.roo/skills.yml` *and* the symlinks. The links are
+relative, so they travel fine in repos cloned into the same layout; on a
+machine without the hub they simply dangle until `setup` + `link`. Real
+project-specific skills in `.roo/skills/` stay tracked exactly as before —
+ignoring the whole directory would hide them, which is why we don't.
+Only `.roo/skills.lock` (and `skills.backup-*.tgz`) are gitignored:
+machine state, derived from the manifest.
 
 ## Layout 📐
 
