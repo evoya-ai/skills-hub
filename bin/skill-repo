@@ -645,7 +645,7 @@ $m"
   while IFS="$FS" read -r n p r _rem unt; do
     if [ "$n" = "$tsrc" ]; then tpath="$HUB/$p"; troot="${r:-.}"; tuntrusted="$unt"; break; fi
   done <<< "$SRC_LINES"
-  [ "$tuntrusted" = "true" ] && die "promote: '$tsrc' is an untrusted external clone — promote into personal/ or a team repo"
+  [ "$tuntrusted" = "true" ] && die "promote: '$tsrc' is an untrusted external clone — promote into personal/ or a shared repo"
   [ -d "$tpath/.git" ] || die "promote: target '$tsrc' is not a git repo ($tpath)"
   if [ -n "$tcat" ]; then
     local seg ok=1

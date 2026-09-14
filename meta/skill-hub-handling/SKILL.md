@@ -85,7 +85,7 @@ Skills are improved where they are used (in projects) and flow back:
 
 The user trusts the agent operating this tool; there is no later human
 review step doing the checking for you. Before promoting — especially
-across a trust boundary (personal→team, external→anything):
+across a trust boundary (personal→shared, external→anything):
 
 1. **Address every finding promote prints.** Fix or scrub, re-run until
    findings are zero or each one is consciously justified. Never promote
@@ -114,7 +114,7 @@ across a trust boundary (personal→team, external→anything):
      directory id; version bumped if overwriting; author field sane for
      the TARGET repo (no other team's or person's company name).
 4. **When in doubt, promote to `personal/` first** and tell the user what
-     you found; let them decide about team promotion.
+     you found; let them decide about promotion to shared/.
 5. **Commit** the staged change with a message naming what was promoted
      and any scrubbing you did. The git history is the audit trail.
 
