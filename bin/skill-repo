@@ -12,7 +12,7 @@ SOURCES_YML="$HUB/sources.yml"
 SOURCES_TEMPLATE="$HUB/sources.template.yml"
 GLOBAL_SKILLS="$HOME/.roo/skills"
 FINDER="skill-hub-handling"
-DEFAULT_TEAM="evoya"
+DEFAULT_SHARED="evoya"   # default shared repo (was: DEFAULT_TEAM / teams/)
 FS='|'
 
 die()      { echo "skill-repo: error: $*" >&2; exit 1; }
@@ -25,7 +25,7 @@ usage() {
 skill-repo — link Roo skills from the hub into this project
 
 Commands (run from a project dir unless noted):
-  setup [--personal <url>] [--team <name>[=<url>]]   (run in hub)
+  setup [--personal <url>] [--shared <name>[=<url>]] (run in hub)
   link [--prune] [--force] [--allow-untrusted]
   list
   search <term>
@@ -425,22 +425,23 @@ registry_append() { # $1=name $2=path
 
 cmd_setup() {
   local personal_url="" t name url
-  local team_specs=()
+  local shared_specs=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --personal) personal_url="${2:-}"; shift 2 ;;
-      --team)     team_specs+=("${2:-}"); shift 2 ;;
+      --shared)   shared_specs+=("${2:-}"); shift 2 ;;
+      --team)     shared_specs+=("${2:-}"); shift 2 ;;   # legacy alias
       --force)    FORCE=1; shift ;;
       *) die "setup: unknown option: $1" ;;
     esac
   done
-  [ "${#team_specs[@]}" -eq 0 ] && team_specs=("$DEFAULT_TEAM")
+  if [ "${#shared_specs[@]}" -eq 0 ]; then shared_specs=("$DEFAULT_SHARED"); fi
 
   ensure_repo personal "$personal_url"
-  for t in "${team_specs[@]}"; do
+  for t in "${shared_specs[@]}"; do
     name="${t%%=*}"; url=""
-    [[ "$t" == *=* ]] && url="${t#*=}"
-    ensure_repo "teams/$name" "$url"
+    if [[ "$t" == *=* ]]; then url="${t#*=}"; fi
+    ensure_repo "shared/$name" "$url"
   done
 
   if [ ! -f "$SOURCES_YML" ]; then
@@ -451,7 +452,7 @@ cmd_setup() {
       registry_append "$n" "$p"
     done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
   fi
-  for t in "${team_specs[@]}"; do name="${t%%=*}"; registry_append "$name" "teams/$name"; done
+  for t in "${shared_specs[@]}"; do name="${t%%=*}"; registry_append "$name" "shared/$name"; done
   registry_append personal personal
 
   chmod +x "$0"

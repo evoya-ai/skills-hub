@@ -7,11 +7,11 @@ sources:
     path: personal
     root: skills
   - name: evoya
-    path: teams/evoya
+    path: shared/evoya
     root: skills
-  # more teams = more sources:
+  # more shared repos = more sources:
   # - name: insign
-  #   path: teams/insign
+  #   path: shared/insign
   #   root: skills
   # external collections (registered via `skill-repo add-remote <url>`):
   # - name: awesome-roo

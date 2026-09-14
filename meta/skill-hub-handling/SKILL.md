@@ -128,7 +128,7 @@ skill. Nothing is committed automatically.
 
 After editing through a link:
 1. Commit the change in the content repo
-   (`git -C ~/workspaces/skill-hub/personal …` or `…/teams/<team>`),
+   (`git -C ~/workspaces/skill-hub/personal …` or `…/shared/<name>`),
    applying the same review discipline as promote when the content is
    sensitive.
 2. Re-run `~/workspaces/skill-hub/bin/skill-repo link` in the project to

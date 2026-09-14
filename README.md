@@ -58,7 +58,7 @@ The hub, once per machine:
 ```bash
 git clone <hub-url> ~/workspaces/skill-hub
 cd ~/workspaces/skill-hub
-./bin/skill-repo setup      # scaffolds personal/ + teams/evoya/, writes sources.yml,
+./bin/skill-repo setup      # scaffolds personal/ + shared/evoya/, writes sources.yml,
                             # installs the global skill-hub-handling skill. Idempotent.
 ```
 
@@ -96,16 +96,16 @@ skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
 ├── sources.template.yml      # registry template
 ├── sources.yml               # machine-local registry (gitignored)
 ├── personal/                 # your private skills repo (gitignored here, own git)
-├── teams/<team>/             # one shared skills repo per team (gitignored here)
+├── shared/<name>/            # shared skills repos, one per team or set (gitignored here)
 └── external/<collection>/    # clones of third-party skill repos (gitignored)
 ```
 
 The actual skills don't live in this repo. They live in **separate git
-repos nested inside it** — `personal/` for your own, `teams/<team>/` for
-each team. Each has its own history and its own remote: `personal/` stays
-on your machine (unless you give it a private one), a team repo gets
-pushed to that team's git host. This repo ignores them on purpose, so
-the toolbox and the content never tangle.
+repos nested inside it** — `personal/` for your own, `shared/<name>/` for
+everything you share. Each has its own history and its own remote:
+`personal/` stays on your machine (unless you give it a private one),
+each shared repo gets pushed to its own git host. This repo ignores them
+on purpose, so the toolbox and the content never tangle.
 
 Inside your own repos, a skill sits at
 `skills/<category>/<skill>/SKILL.md` — one category level, like
@@ -116,8 +116,8 @@ with any layout.
 ## Trust rules 🛡️
 
 - `personal/` never leaves your machine unless you give it a private remote.
-- `teams/<team>/` is shared via that team's own remote. Anything crossing
-  personal → team passes a review first: secrets, real emails, company
+- `shared/<name>/` is shared via its own remote. Anything crossing
+  personal → shared passes a review first: secrets, real emails, company
   terms, machine-specific paths. The promote checklist in
   `skill-hub-handling` is the control; the agent operating it owns that
   check.
