@@ -66,6 +66,28 @@ no manual steps left to the user:
 7. **Report**: what got linked, what stayed local and why, what looks
    promote-worthy, and where the `.pre-hub-*` backups are.
 
+## Register a repo from a URL
+
+"Add the skill repo from <url>" — two cases by trust level:
+
+- **Own/team content repo** (the user presents it as theirs):
+  1. Probe first: `git ls-remote <url>` (prefer SSH; https prompts for
+     credentials). Empty refs → fresh target. Existing refs + an existing
+     local repo → merge direction is unclear: STOP and ask.
+  2. Local repo exists (e.g. `personal/`, `shared/<name>/`) without a
+     remote, URL empty → `git -C <repo> remote add origin <url>` and
+     `git -C <repo> push -u origin <branch>`.
+  3. No local repo → `git clone <url>` into the hub, then confirm the
+     layout is `skills/<category>/<skill>/SKILL.md` (adjust `root:`).
+  4. Record it in the hub's `sources.yml` (`name`, `path`, `root`,
+     `remote` — NO `untrusted: true`) and check `skill-repo update`
+     pulls it.
+- **Third-party collection** (untrusted prompt content):
+  `~/workspaces/skill-hub/bin/skill-repo add-remote <url> [--name NAME]
+  [--root PATH]` — clones under `external/`, registers with
+  `untrusted: true`. Link individual skills only, and only after the
+  user approved.
+
 ## Persistence: commit AND push — ask first, then do
 
 Skill content lives in git repos, and content repos can have remotes
