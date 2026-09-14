@@ -6,7 +6,7 @@ description: Manage skills from the skills hub — find and link missing capabil
 # Skill hub handling
 
 The skills hub lives at `~/workspaces/skill-hub`. Its sources (personal,
-teams, external collections) are listed in its `sources.yml`.
+shared, external collections) are listed in its `sources.yml`.
 
 ## Read path: find and link a skill
 
