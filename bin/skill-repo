@@ -249,6 +249,7 @@ $m"
     if grep -qF "ALIAS|$i|" "$ALIAS_TMP" 2>/dev/null; then
       ln="$(grep -F "ALIAS|$i|" "$ALIAS_TMP" | head -1 | cut -d"$FS" -f3)"
     fi
+    ln="$ln.hub"   # marker suffix: one committed ignore pattern covers all links
     RESULT="${RESULT}$(printf '%s|%s|%s|%s\n' "$ln" "$s" "$c" "$p")
 "
   done < <(sort -u -t"$FS" -k6,6 "$SEL_TMP")
@@ -291,7 +292,7 @@ cmd_link() {
       commit="-"
     fi
     aliased=false
-    [ "$lnk" != "$(basename "$path")" ] && aliased=true
+    [ "${lnk%.hub}" != "$(basename "$path")" ] && aliased=true
     printf '%s:\n  source: %s\n  category: %s\n  path: %s\n  commit: %s\n  aliased: %s\n' \
       "$lnk" "$src" "${cat:-.}" "${path#"$HUB"/}" "$commit" "$aliased" >> "$tmp"
     n=$((n+1))
@@ -312,7 +313,18 @@ cmd_link() {
     done
   fi
   info "linked $n skill(s) -> .roo/skills (lock: .roo/skills.lock)"
+  link_ignore_pattern
   link_roots_register
+}
+
+link_ignore_pattern() { # ensure '<skills-rel>/*.hub' is gitignored (committed line)
+  git rev-parse --show-toplevel > /dev/null 2>&1 || return 0
+  local root rel
+  root="$(git rev-parse --show-toplevel)"
+  rel="$(realpath --relative-to="$root" .roo/skills)"
+  grep -qxF "${rel}/*.hub" .gitignore 2>/dev/null && return 0
+  { [ -s .gitignore ] && echo; printf '# skills hub links (marker suffix)\n%s/*.hub\n' "$rel"; } >> .gitignore
+  info "added '${rel}/*.hub' to .gitignore (commit this line)"
 }
 
 # ------------------------------------------------------------ link roots
@@ -561,7 +573,7 @@ cmd_where() {
     printf '%s\n' "$proj" >> "$kept"
     if [ -n "$name" ]; then
       out="$(awk -v n="$name" '
-        $0 == n ":" { inb = 1; next }
+        $0 == n ":" || $0 == n ".hub:" { inb = 1; next }
         inb && /^[^[:space:]]/ { inb = 0 }
         inb && /^  (source|category|path|commit|aliased):/ { print "    " $0 }
       ' "$lock")"

@@ -80,13 +80,12 @@ exclude:
   - seo/seo-drift            # subtract from the selection
 ```
 
-**Git policy:** commit `.roo/skills.yml` *and* the symlinks. The links are
-relative, so they travel fine in repos cloned into the same layout; on a
-machine without the hub they simply dangle until `setup` + `link`. Real
-project-specific skills in `.roo/skills/` stay tracked exactly as before —
-ignoring the whole directory would hide them, which is why we don't.
-Only `.roo/skills.lock` (and `skills.backup-*.tgz`) are gitignored:
-machine state, derived from the manifest.
+**Git policy:** commit `.roo/skills.yml`. Hub links are named with a
+`.hub` marker (`data-table.hub`) and covered by one committed ignore line
+(`.roo/skills/*.hub` — `link` adds it for you). Real project-specific
+skills in that directory stay tracked exactly as before; the links
+themselves are machine state, recreated by `setup` + `link` on any clone.
+Also ignored: `.roo/skills.lock` and `skills.backup-*.tgz`.
 
 ## Layout 📐
 
