@@ -406,25 +406,37 @@ cmd_verify() {
 }
 
 ensure_repo() { # $1=relative dir, $2=optional url
-  local dir="$HUB/$1"
-  if [ -d "$dir/.git" ]; then info "setup: $1 exists"; return 0; fi
+  local dir="$HUB/$1" remote=""
+  if [ -d "$dir/.git" ]; then
+    remote="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+    if [ -n "$remote" ]; then
+      info "setup: $1 exists (remote: $remote)"
+    else
+      info "setup: $1 exists (no remote)"
+    fi
+    return 0
+  fi
   if [ -n "${2:-}" ]; then
     git clone "$2" "$dir" || die "clone failed: $2"
+    info "setup: cloned $2 -> $1"
   else
     mkdir -p "$dir/skills"
     git -C "$dir" init -q -b main
     printf '# %s skills\n\nLayout: skills/<category>/<skill>/SKILL.md — see the hub README.\n' "$1" > "$dir/README.md"
     git -C "$dir" add -A && git -C "$dir" commit -qm "init: skills repo scaffold"
+    info "setup: created $1/ (git repo, skills/ scaffold, initial commit)"
   fi
 }
 
-registry_append() { # $1=name $2=path
-  grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*\"?${1}\"?[[:space:]]*$" "$SOURCES_YML" 2>/dev/null && return 0
+registry_append() { # $1=name $2=path — rc 0: appended, rc 1: already registered
+  if grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*\"?${1}\"?[[:space:]]*$" "$SOURCES_YML" 2>/dev/null; then
+    return 1
+  fi
   printf '  - name: %s\n    path: %s\n    root: skills\n' "$1" "$2" >> "$SOURCES_YML"
 }
 
 cmd_setup() {
-  local personal_url="" t name url
+  local personal_url="" t name url path root remote untrusted cnt note
   local shared_specs=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -446,14 +458,17 @@ cmd_setup() {
 
   if [ ! -f "$SOURCES_YML" ]; then
     cp "$SOURCES_TEMPLATE" "$SOURCES_YML"
-  else
-    while IFS="$FS" read -r n p _; do
-      [ -n "${n:-}" ] || continue
-      registry_append "$n" "$p"
-    done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
+    info "setup: wrote sources.yml from sources.template.yml"
   fi
-  for t in "${shared_specs[@]}"; do name="${t%%=*}"; registry_append "$name" "shared/$name"; done
-  registry_append personal personal
+  while IFS="$FS" read -r n p _; do
+    [ -n "${n:-}" ] || continue
+    if registry_append "$n" "$p"; then info "setup: sources.yml: registered '$n' ($p)"; fi
+  done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
+  for t in "${shared_specs[@]}"; do
+    name="${t%%=*}"
+    if registry_append "$name" "shared/$name"; then info "setup: sources.yml: registered '$name' (shared/$name)"; fi
+  done
+  if registry_append personal personal; then info "setup: sources.yml: registered 'personal' (personal/)"; fi
 
   chmod +x "$0"
   mkdir -p "$GLOBAL_SKILLS"
@@ -461,18 +476,33 @@ cmd_setup() {
   local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$HUB/meta/skill-hub-handling")"
   if [ -L "$dest" ]; then
     ln -sfn "$target" "$dest"
+    info "setup: refreshed global skill symlink: $dest"
   elif [ -e "$dest" ]; then
     if [ "$FORCE" = 1 ]; then
       local ts; ts="$(date +%Y%m%d%H%M%S)"
       mv "$dest" "$dest.pre-hub-$ts"; ln -s "$target" "$dest"
       warn "moved existing $FINDER aside ($dest.pre-hub-$ts)"
+      info "setup: installed global skill: $dest"
     else
       warn "$dest exists and is not a symlink — not overwritten (rerun setup --force)"
     fi
   else
     ln -s "$target" "$dest"
+    info "setup: installed global skill: $dest -> $HUB/meta/skill-hub-handling"
   fi
-  info "setup: done. sources.yml ready; skill-hub-handling installed globally."
+
+  info "setup: done. sources registered in sources.yml:"
+  load_sources
+  build_index
+  while IFS="$FS" read -r name path root remote untrusted; do
+    [ -n "${name:-}" ] || continue
+    cnt="$(printf '%s\n' "$INDEX" | awk -F"$FS" -v s="$name" '$1 == s { n++ } END { print n + 0 }')"
+    note=""
+    [ -n "$remote" ] && note=", remote: $remote"
+    [ "$untrusted" = "true" ] && note="$note, untrusted"
+    info "  $name — $path ($cnt skill(s)$note)"
+  done <<< "$SRC_LINES"
+  info "next: 'skill-repo search <term>' to find skills, './start' for the web UI"
 }
 
 cmd_update() {
