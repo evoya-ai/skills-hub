@@ -70,7 +70,10 @@ across a trust boundary. You say "we need a data-table skill here" or
 
 Stdlib-only Python (`app/`), no build step: a live view of the hub — sources
 with remotes, every skill (with its rendered `SKILL.md`), and which projects
-link what.
+link what. A `README.txt` in a category folder is rendered above that
+folder's skills (describe the skill set there), and the clipboard icon next
+to any skill or folder copies the prompt that links it into a project —
+phrased exactly for the `skill-hub-handling` skill to execute.
 
 <p align="center">
   <a href="docs/screenshot.png" target="_blank">

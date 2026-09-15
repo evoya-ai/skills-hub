@@ -55,6 +55,19 @@ function linkIcon(size = 12) {
   return svg;
 }
 
+function copyIcon(size = 13) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.setAttribute("aria-hidden", "true");
+  const back = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  back.setAttribute("d", "M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Zm5-5C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z");
+  back.setAttribute("fill", "currentColor");
+  svg.appendChild(back);
+  return svg;
+}
+
 function externalIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
@@ -83,6 +96,81 @@ function matchesProject(project, q) {
     project.linked.some((s) => s.name.toLowerCase().includes(q)) ||
     project.local.some((s) => s.name.toLowerCase().includes(q))
   );
+}
+
+/* --------------------------------------------------- clipboard + link prompts */
+
+function copyText(text) {
+  return new Promise((resolve) => {
+    const fallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        resolve(ok);
+      } catch {
+        resolve(false);
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => resolve(true), fallback);
+    } else {
+      fallback();
+    }
+  });
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let node = document.querySelector(".toast");
+  if (!node) {
+    node = el("div", { class: "toast", role: "status" });
+    document.body.appendChild(node);
+  }
+  node.textContent = msg;
+  node.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.classList.remove("show"), 2200);
+}
+
+/* One line each — the skill-hub-handling meta skill owns the detailed flow
+   (refs in .roo/skills.yml, `skill-repo link`, load check, and the rule
+   that untrusted sources link individual skills only). */
+function skillLinkPrompt(skill) {
+  return `Link the skills-hub skill \`${skill.id}\` into this project, following the skill-hub-handling skill.`;
+}
+
+function categoryLinkPrompt(src, cat) {
+  const count = (cat.skills || []).length;
+  const n = `${count} skill${count === 1 ? "" : "s"}`;
+  const label = cat.name === "." || cat.name === "" ? src.name : `${src.name}/${cat.name}`;
+  return `Link all ${n} in the skills-hub folder \`${label}\` into this project, following the skill-hub-handling skill.`;
+}
+
+function copyPromptButton(title, getPrompt, label) {
+  const children = [copyIcon()];
+  if (label) children.push(el("span", { text: label }));
+  return el("button", {
+    class: "copy-prompt" + (label ? " labeled" : ""),
+    type: "button",
+    title,
+    "aria-label": title,
+    onclick: (e) => {
+      e.stopPropagation();
+      copyText(getPrompt()).then((ok) => {
+        toast(ok ? "prompt copied — paste it into your agent chat" : "copy failed — clipboard unavailable");
+      });
+      const btn = e.currentTarget;
+      btn.classList.add("flash");
+      setTimeout(() => btn.classList.remove("flash"), 1800);
+    },
+  }, children);
 }
 
 /* ------------------------------------------------------------------ router */
@@ -115,8 +203,13 @@ window.addEventListener("hashchange", render);
 
 /* ------------------------------------------------------------------ render */
 
+let lastRoute = null; // route key of the previous render — detects real navigation
+
 function render() {
   const { viewName, skillId } = parseHash();
+  const route = `${viewName}:${skillId || ""}`;
+  const routeChanged = route !== lastRoute;
+  lastRoute = route;
   document.getElementById("tab-hub").setAttribute("aria-selected", String(viewName === "hub"));
   document.getElementById("tab-projects").setAttribute("aria-selected", String(viewName === "projects"));
   view.textContent = "";
@@ -126,6 +219,19 @@ function render() {
   if (viewName === "projects") renderProjects(skillId);
   else if (viewName === "skill") renderSkillView(skillId);
   else renderHub(skillId);
+  if (routeChanged) resetScroll(viewName, skillId);
+}
+
+/* Hash navigation keeps the old scroll offset (the fragment matches no anchor),
+   so a fresh route would otherwise open mid-page. Focused hub/projects routes
+   are the exception: their focus helpers scroll to the flashed card instead. */
+function resetScroll(viewName, skillId) {
+  if (skillId && viewName !== "skill") return;
+  const html = document.documentElement;
+  const smooth = html.style.scrollBehavior;
+  html.style.scrollBehavior = "auto"; // bypass the global smooth scrolling
+  window.scrollTo(0, 0);
+  html.style.scrollBehavior = smooth;
 }
 
 function renderEmptyState(isSearch) {
@@ -305,10 +411,27 @@ function buildCategory(cat, skills, src, searching, focusSkillId) {
     el("span", { class: "cat-count", text: String(skills.length) }),
   );
 
+  const folderLabel = cat.name === "." || cat.name === "" ? src.name : `${src.name}/${cat.name}`;
+  const copyBtn = copyPromptButton(
+    `copy prompt — link every skill in ${folderLabel}`,
+    () => categoryLinkPrompt(src, cat), // cat.skills: the WHOLE folder, even mid-search
+  );
+
   const grid = el("div", { class: "skill-grid" });
   for (const skill of skills) grid.appendChild(buildSkillCard(skill, src, focusSkillId));
 
-  const node = el("div", { class: "category open" }, head, el("div", { class: "category-body" }, grid));
+  const body = el("div", { class: "category-body" });
+  const md = cat.readme && cat.readme.markdown ? cat.readme.markdown.trim() : "";
+  if (md) {
+    body.appendChild(el("section", { class: "cat-readme" },
+      el("div", { class: "cat-readme-file", text: cat.readme.file || "README.txt" }),
+      renderMarkdown(md)));
+  }
+  body.appendChild(grid);
+
+  const node = el("div", { class: "category open" },
+    el("div", { class: "category-row" }, head, copyBtn),
+    body);
   if (!searching && !focusSkillId) node.classList.remove("open"); // collapsed by default
   return node;
 }
@@ -324,6 +447,7 @@ function buildSkillCard(skill, src, focusSkillId) {
   } else {
     foot.appendChild(el("span", { class: "not-linked", text: "not linked yet" }));
   }
+  foot.appendChild(copyPromptButton(`copy prompt — link ${skill.id}`, () => skillLinkPrompt(skill)));
   foot.appendChild(el("span", { class: "expand-hint" },
     el("span", { class: "more", text: "more" }),
     el("span", { class: "chev", text: "▾" }),
@@ -470,6 +594,11 @@ function renderSkillView(id) {
   } else {
     actions.appendChild(el("span", { class: "not-linked", text: "not linked by any project yet" }));
   }
+  actions.appendChild(copyPromptButton(
+    `copy the prompt that links ${skill.id} into a project`,
+    () => skillLinkPrompt(skill),
+    "copy link prompt",
+  ));
   actions.appendChild(el("button", {
     class: "hero-alt", type: "button",
     onclick: () => navigate("hub", skill.id),

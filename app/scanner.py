@@ -235,6 +235,26 @@ def scan_local_skills(project_root):
     return out
 
 
+# ---------------------------------------------------------------- folder readmes
+
+def read_category_readme(root_dir, category):
+    """Folder-level README describing a skill set (a category folder).
+
+    The UI renders it as markdown above the folder's skills, so a team can
+    document what e.g. `saas-pegasus` is for. `README.txt` wins over
+    `README.md` (the .txt name keeps git forges from treating it as the
+    repo readme). Returns {"file", "markdown"} or None.
+    """
+    folder = root_dir if category in (".", "") else root_dir / category
+    for fname in ("README.txt", "README.md"):
+        try:
+            text = (folder / fname).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        return {"file": fname, "markdown": text}
+    return None
+
+
 # ---------------------------------------------------------------- full scan
 
 def _kind_of(src):
@@ -258,6 +278,7 @@ def _scan(hub):
         kind = _kind_of(src)
         remote = src["remote"] or _git(hub / src["path"], "remote", "get-url", "origin")
         skills, cats = scan_source_skills(hub, src)
+        root_dir = (hub / src["path"] / src["root"]).resolve()
         for hub_rel, skill in skills.items():
             path_index[hub_rel] = skill
         skills_count += sum(len(v) for v in cats.values())
@@ -273,7 +294,11 @@ def _scan(hub):
             "untrusted": bool(src["untrusted"]),
             "note": note,
             "categories": [
-                {"name": cat, "skills": cat_skills}
+                {
+                    "name": cat,
+                    "readme": read_category_readme(root_dir, cat),
+                    "skills": cat_skills,
+                }
                 for cat, cat_skills in sorted(cats.items())
             ],
         })

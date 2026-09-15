@@ -411,6 +411,9 @@ button.source-remote:focus-visible { outline: none; box-shadow: var(--focus-ring
 
 .category { margin-top: 14px; }
 
+.category-row { display: flex; align-items: center; gap: 4px; }
+.category-row .category-head { width: auto; flex: 1; min-width: 0; }
+
 .category-head {
   display: flex;
   align-items: center;
@@ -451,6 +454,35 @@ button.source-remote:focus-visible { outline: none; box-shadow: var(--focus-ring
 
 .category-body { display: none; padding-top: 10px; }
 .category.open .category-body { display: block; }
+
+/* folder README (rendered above the folder's skills) */
+
+.cat-readme {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--indigo-border);
+  border-radius: 8px;
+  padding: 12px 18px 10px;
+  margin: 2px 0 14px;
+}
+
+.cat-readme-file {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.cat-readme .md { max-width: none; font-size: 13.5px; line-height: 1.55; }
+.cat-readme .md h2 { font-size: 15.5px; margin: 12px 0 6px; border-bottom: 0; padding-bottom: 0; }
+.cat-readme .md h3 { font-size: 14px; margin: 10px 0 4px; }
+.cat-readme .md p { margin: 6px 0; }
+.cat-readme .md ul, .cat-readme .md ol { margin: 6px 0; padding-left: 22px; }
+.cat-readme .md pre { padding: 10px 12px; margin: 8px 0; border-radius: 8px; }
+.cat-readme .md blockquote { margin: 8px 0; padding: 6px 12px; }
 
 .skill-grid {
   display: grid;
@@ -578,6 +610,72 @@ button.source-remote:focus-visible { outline: none; box-shadow: var(--focus-ring
 .skill.expanded .chev { transform: rotate(180deg); }
 .skill.expanded .expand-hint .more { display: none; }
 .skill:not(.expanded) .expand-hint .less { display: none; }
+
+/* copy-prompt buttons (skill cards, folder rows, skill hero) */
+
+.copy-prompt {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--faint);
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  cursor: copy;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: none;
+  transition: color .12s ease, background .12s ease, border-color .12s ease;
+}
+
+.copy-prompt svg { flex: none; }
+
+.copy-prompt:hover {
+  color: var(--indigo);
+  background: var(--indigo-bg);
+  border-color: var(--indigo-border);
+}
+
+.copy-prompt:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.copy-prompt.labeled {
+  width: auto;
+  height: auto;
+  gap: 7px;
+  padding: 4.5px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--indigo-ink);
+  background: var(--indigo-bg);
+  border-color: var(--indigo-border);
+}
+
+.copy-prompt.labeled:hover { background: #e0e7ff; color: var(--indigo-ink); }
+
+/* toast (copy feedback) */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 12px);
+  background: var(--text);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 8px 16px;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 100;
+}
+
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------------------------------------------------------------- projects */
 

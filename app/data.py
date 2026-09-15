@@ -278,6 +278,30 @@ _S = {
     },
 }
 
+# Folder-level READMEs, mirroring what the real scanner reads from
+# <category>/README.txt — rendered above the folder's skills in the UI.
+_READMES = {
+    ("personal", "writing"): {
+        "file": "README.txt",
+        "markdown": (
+            "# writing\n\n"
+            "Copy skills for human-sounding text, one per language. Each ships a\n"
+            "watchlist of tell-tale phrasings and a self-check to run before\n"
+            "handing anything over.\n"
+        ),
+    },
+    ("evoya", "saas-pegasus"): {
+        "file": "README.txt",
+        "markdown": (
+            "# saas-pegasus\n\n"
+            "The Pegasus conventions — data tables, Django models, CRUD scaffolding.\n"
+            "Link the whole set (`categories: [evoya/saas-pegasus]`) or pick\n"
+            "individual skills; `data-table` is the one almost every app wants.\n"
+        ),
+    },
+}
+
+
 # Source metadata (mirrors sources.yml fields)
 _SOURCES = [
     {
@@ -441,7 +465,11 @@ def hub():
                     "markdown": _markdown(meta["name"], cat, name, desc),
                     "linked_by": sorted(linked_by.get(sid, [])),
                 })
-            cats.append({"name": cat, "skills": cat_skills})
+            cats.append({
+                "name": cat,
+                "readme": _READMES.get((meta["name"], cat)),
+                "skills": cat_skills,
+            })
         sources.append({**meta, "categories": cats})
 
     n_skills = sum(len(c["skills"]) for s in sources for c in s["categories"])

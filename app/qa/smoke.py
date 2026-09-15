@@ -112,10 +112,39 @@ def main():
         page.screenshot(path=str(OUT / "02-hub-expanded.png"), full_page=True)
         page.screenshot(path=str(OUT / "01-hub-collapsed.png"), full_page=False)  # above-fold view
 
+        print("== copy-prompt buttons ==")
+        check(page.locator(".category-row .copy-prompt").count() > 0, "folder copy-prompt buttons present")
+        check(page.locator(".skill .copy-prompt").count() > 0, "skill copy-prompt buttons present")
+        before = card.get_attribute("class") or ""
+        card.locator(".copy-prompt").first.click()
+        page.wait_for_timeout(250)
+        check(page.locator(".toast.show").count() == 1, "toast confirms the copy")
+        check((card.get_attribute("class") or "") == before, "copy click does not toggle the skill card")
+
+        print("== folder README ==")
+        readme_hit = next(({"src": s["name"], "cat": c["name"]}
+                           for s in hub["sources"] for c in s["categories"] if c.get("readme")), None)
+        if readme_hit:
+            already_open = readme_hit["src"] == anchor["src"] and readme_hit["cat"] == anchor["cat"]
+            if not already_open:
+                page.locator(f'.source-card[data-source="{readme_hit["src"]}"] .category-head',
+                             has_text=readme_hit["cat"]).first.click()
+                page.wait_for_timeout(150)
+            readme_node = page.locator(".cat-readme").first
+            check(readme_node.is_visible(),
+                  f"README rendered above the skills of {readme_hit['src']}/{readme_hit['cat']}")
+            check(readme_node.locator(".md").count() == 1, "folder README rendered as markdown")
+            page.screenshot(path=str(OUT / "12-folder-readme.png"), full_page=True)
+        else:
+            print("  [SKIP] no folder README in this dataset")
+
         print("== skill detail view (SKILL.md) ==")
         card.locator(".skill-name a").click()
         page.wait_for_timeout(400)
         check("#/skill/" in page.url, "skill name link opens SKILL.md view")
+        check(page.evaluate("window.scrollY") == 0, "detail view opens at the top (no scroll jump)")
+        check(page.locator(".skill-hero .copy-prompt.labeled").count() == 1,
+              "hero offers a labeled copy link prompt button")
         check(page.locator(".skill-hero .skill-title").inner_text() == anchor["name"], "hero shows the skill name")
         md_text = page.locator(".md").inner_text()
         check(len(md_text.strip()) > 50, f"markdown body rendered ({len(md_text)} chars)")
