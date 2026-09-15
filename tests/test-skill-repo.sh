@@ -3,7 +3,8 @@
 #
 # Pure bash, no network: remotes are local file:// bare repos, the hub under
 # test is a fixture copy of bin/skill-repo + sources.template.yml + meta/,
-# and HOME is overridden so the global-skill symlink lands in the fixture.
+# and HOME is overridden so the global skill symlink + path file land in
+# the fixture.
 # All temp state lives under tests/.tmp/ (gitignored). The script wipes its
 # case dirs on re-run; final leftovers stay for inspection (path is printed).
 #
@@ -341,9 +342,126 @@ t17() {
   assert "git sees local skill as untracked" test -n "$(git -C "$proj" status --porcelain -- .roo/skills/my-skill)"
 }
 
+t18() {
+  echo "T18 category + explicit skill overlap: resolved once, linked once"
+  new_hub t18
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills"
+  git init -q -b main "$proj"
+  printf 'source: evoya\ncategories:\n  - marketing\nskills:\n  - marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "link rc=0" test "$RC" = 0
+  assert "exactly one lock entry" test "$(grep -c '^data-table:$' "$proj/.roo/skills.lock")" = 1
+  assert "gitignore entry not duplicated" test "$(grep -c '^/data-table$' "$proj/.roo/skills/.gitignore")" = 1
+  assert "symlink is a single link" test "$(find "$proj/.roo/skills" -maxdepth 1 -name 'data-table' | wc -l)" = 1
+}
+
+t19() {
+  echo "T19 same skill id from two sources: conflict, no link"
+  new_hub t19
+  seed_remote "$CASE/one.git" main
+  seed_remote "$CASE/two.git" main
+  run_cli setup --shared "evoya=file://$CASE/one.git" --shared "beta=file://$CASE/two.git"
+  assert "setup rc=0" test "$RC" = 0
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills"
+  git init -q -b main "$proj"
+  printf 'skills:\n  - evoya/marketing/data-table\n  - beta/marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  ERR="$(cat "$CASE/stderr" 2>/dev/null || true)"
+  assert "link rc=2 (conflict)" test "$RC" = 2
+  assert_match "message reports the double selection" "$OUT$ERR" "selected twice"
+  assert "no link created" test ! -e "$proj/.roo/skills/data-table"
+}
+
+t21() {
+  echo "T21 CLI guard: no bash >= 4-only syntax creeps back in"
+  assert_not "no associative arrays" grep -nE 'local -A|declare -A|typeset -A' "$REPO/bin/skill-repo"
+  assert_not "no case-folding expansions" grep -nE '\$\{[0-9A-Za-z_]+(,,|\^\^?)\}' "$REPO/bin/skill-repo"
+  assert_not "no mapfile/readarray" grep -nE '\b(mapfile|readarray)\b' "$REPO/bin/skill-repo"
+}
+
+t20() {
+  echo "T20 search lowercases the term without bash-4 syntax"
+  new_hub t20
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  run_cli search DATA-TABLE
+  assert "uppercase term finds skill" grep -q "data-table" <<< "$OUT"
+  run_cli search Table
+  assert "mixed-case term finds skill" grep -q "data-table" <<< "$OUT"
+}
+
+t22() {
+  echo "T22 global meta skill: symlink + path file, edits live without setup"
+  new_hub t22
+  seed_remote "$CASE/remote.git" main
+  mkdir -p "$HOME/.roo/skills"
+  ln -s "$HUB/meta/skill-hub-handling" "$HOME/.roo/skills/skill-hub-handling"  # legacy install
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  g="$HOME/.roo/skills/skill-hub-handling"
+  assert "deployed as symlink" test -L "$g"
+  assert "symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+  assert "path file written" test "$(cat "$HUB/meta/skill-hub-handling/resources/skill-hub-path.txt")" = "$HUB"
+  assert "path file reachable through symlink" test -f "$g/resources/skill-hub-path.txt"
+  assert "SKILL.md references the path file" grep -qF 'resources/skill-hub-path.txt' "$g/SKILL.md"
+  assert_not "no placeholder syntax left" grep -rqF '{{SKILL_HUB_ROOT}}' "$HUB/meta/skill-hub-handling"
+  echo "t22 edit" >> "$HUB/meta/skill-hub-handling/SKILL.md"
+  assert "template edit visible without setup" grep -qF "t22 edit" "$g/SKILL.md"
+  echo "/wrong/path" > "$HUB/meta/skill-hub-handling/resources/skill-hub-path.txt"
+  run_cli setup
+  assert "re-run setup rc=0" test "$RC" = 0
+  assert "path file rewritten" test "$(cat "$HUB/meta/skill-hub-handling/resources/skill-hub-path.txt")" = "$HUB"
+  # interim-build migration: rendered copy dir (marker) -> symlink
+  rm "$HOME/.roo/skills/skill-hub-handling"
+  mkdir -p "$g"
+  printf 'rendered from x by skill-repo setup' > "$g/.rendered-by-skill-repo"
+  printf -- '---\nname: skill-hub-handling\ndescription: rendered\n---\n' > "$g/SKILL.md"
+  run_cli setup
+  assert "rendered copy migrated to symlink" test -L "$g"
+  assert "migrated symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+}
+
+t23() {
+  echo "T23 foreign global skill dir: kept without --force, replaced with it"
+  new_hub t23
+  g="$HOME/.roo/skills/skill-hub-handling"
+  mkdir -p "$g"
+  printf -- '---\nname: skill-hub-handling\ndescription: hand-made\n---\n' > "$g/SKILL.md"
+  run_cli setup
+  assert "setup rc=0 (warn only)" test "$RC" = 0
+  assert_match "warns: not overwritten" "$ERR" "not overwritten"
+  assert "hand-made copy kept" grep -qF "hand-made" "$g/SKILL.md"
+  assert "still a real dir" test -d "$g" -a ! -L "$g"
+  run_cli setup --force
+  assert "setup --force rc=0" test "$RC" = 0
+  assert "symlink installed" test -L "$g"
+  assert "symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+  assert "hand-made backup kept" test -n "$(find "$HOME/.roo/skills" -maxdepth 1 -name 'skill-hub-handling.pre-hub-*')"
+}
+
+t24() {
+  echo "T24 hub .gitignore covers the machine-local path file (idempotent)"
+  new_hub t24
+  run_cli setup
+  assert "plain fixture: no .gitignore created" test ! -e "$HUB/.gitignore"
+  git init -q -b main "$HUB"
+  run_cli setup
+  assert "git-repo hub: line appended" grep -qxF "meta/skill-hub-handling/resources/skill-hub-path.txt" "$HUB/.gitignore"
+  assert "exactly one line" test "$(grep -cxF "meta/skill-hub-handling/resources/skill-hub-path.txt" "$HUB/.gitignore")" = 1
+  assert "path file ignored by git" test -z "$(git -C "$HUB" status --porcelain -- meta/skill-hub-handling/resources/skill-hub-path.txt)"
+}
+
 t1;  t2;  t3;  t4;  t5;  t6;  t7
 t8;  t9;  t10; t11; t12; t13
 t14; t15; t16; t17
+t18; t19; t20; t21
+t22; t23; t24
 
 echo
 echo "passed: $PASS  failed: $FAIL"

@@ -81,13 +81,20 @@ link what.
 
 ## Setup 🚀
 
+**Requirements:** bash ≥ 3.2 (macOS's stock `/bin/bash` works), `git`, and
+— for `setup`/`link` — GNU `realpath` (the `--relative-to` flag; BSD
+realpath lacks it). On macOS: `brew install coreutils`, then put
+`$(brew --prefix)/opt/coreutils/libexec/gnubin` first on your `PATH`.
+
 The hub, once per machine:
 
 ```bash
-git clone <hub-url> ~/workspaces/skill-hub
+git clone <hub-url> ~/workspaces/skill-hub   # any location works
 cd ~/workspaces/skill-hub
 ./bin/skill-repo setup      # scaffolds personal/ ONLY, writes sources.yml, installs
-                            # the global skill-hub-handling skill. Idempotent —
+                            # the global skill-hub-handling skill as a symlink and
+                            # records this machine's hub path in its
+                            # resources/skill-hub-path.txt. Idempotent —
                             # shared repos are opt-in:
 ./bin/skill-repo setup --shared evoya=ssh://git@host/evoya-skills.git
                             # team onboarding one-liner: clone + register in one
@@ -126,8 +133,10 @@ recreated by `setup` + `link` on any clone. Also ignored:
 
 ```
 skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
-├── bin/skill-repo            # the CLI (bash, no dependencies)
-├── meta/skill-hub-handling/  # the ONE global skill (symlinked into ~/.roo/skills)
+├── bin/skill-repo            # the CLI (bash ≥ 3.2 + git; macOS: coreutils, see Setup)
+├── meta/skill-hub-handling/  # the ONE global skill — symlinked into ~/.roo/skills;
+                              #  its gitignored resources/skill-hub-path.txt pins the
+                              #  local hub path (referenced relatively by the skill)
 ├── sources.template.yml      # registry template
 ├── sources.yml               # machine-local registry (gitignored)
 ├── personal/                 # your private skills repo (gitignored here, own git)

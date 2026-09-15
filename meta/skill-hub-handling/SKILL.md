@@ -5,14 +5,23 @@ description: Manage skills from the skills hub — find and link missing capabil
 
 # Skill hub handling
 
-The skills hub lives at `~/workspaces/skill-hub`. Its sources (personal,
-shared, external collections) are listed in its `sources.yml`.
+The skills hub's location on this machine is recorded in
+`resources/skill-hub-path.txt`, next to this SKILL.md — through the
+global skills dir that is
+`~/.roo/skills/skill-hub-handling/resources/skill-hub-path.txt`.
+Read it before the first hub command of a task; everything below writes
+that path as `$SKILL_HUB`:
+
+    SKILL_HUB="$(cat ~/.roo/skills/skill-hub-handling/resources/skill-hub-path.txt)"
+
+The hub's sources (personal, shared, external collections) are listed in
+its `sources.yml`.
 
 ## Read path: find and link a skill
 
 When the user asks for a capability and no loaded skill covers it:
 
-1. **Search** — `~/workspaces/skill-hub/bin/skill-repo search <term>`
+1. **Search** — `$SKILL_HUB/bin/skill-repo search <term>`
    (matches skill ids, category paths and descriptions across ALL
    registered sources; read-only).
 2. **Propose** — if a match fits, add its reference to this project's
@@ -21,7 +30,7 @@ When the user asks for a capability and no loaded skill covers it:
    - single skill: `skills: [data-table]` (qualify with the source name
      when ambiguous, e.g. `evoya/data-table`; optional alias:
      `external/code-review as ext-code-review`)
-3. **Link** — run `~/workspaces/skill-hub/bin/skill-repo link` and confirm
+3. **Link** — run `$SKILL_HUB/bin/skill-repo link` and confirm
    the skill now loads (it must appear in the available skills of the next
    task / after a Roo restart).
 4. **External caution** — sources marked `untrusted: true` are third-party
@@ -32,7 +41,7 @@ Never hand-create a skill in a project when the hub already has one.
 
 ## Reverse lookup: who consumes a skill?
 
-`~/workspaces/skill-hub/bin/skill-repo where [<id>]` — every project that
+`$SKILL_HUB/bin/skill-repo where [<id>]` — every project that
 links the skill (with source and commit), or the full consumer map without
 an id. Projects self-register at `link` time. Run it BEFORE `promote
 --force` to know the blast radius of a replacement, and when auditing who
@@ -52,7 +61,7 @@ no manual steps left to the user:
 2. **Back up**: `tar -czf .roo/skills.backup-$(date +%F).tgz -C .roo skills`.
 3. **Write `.roo/skills.yml`** with source-qualified refs for everything
    you will link.
-4. **Link**: `~/workspaces/skill-hub/bin/skill-repo link --force` —
+4. **Link**: `$SKILL_HUB/bin/skill-repo link --force` —
    vendored copies move aside as `*.pre-hub-<ts>` (never deleted; tell
    the user they can remove them once confident).
 5. **Git policy**: hub links are plain-named symlinks (`data-table` — the
@@ -73,7 +82,7 @@ no manual steps left to the user:
 "Add the skill repo from <url>" — two cases by trust level:
 
 - **Own/team content repo** (the user presents it as theirs):
-  `~/workspaces/skill-hub/bin/skill-repo attach <name> <url>` — one command:
+  `$SKILL_HUB/bin/skill-repo attach <name> <url>` — one command:
   - no local repo yet → clones into `shared/<name>/` and registers it
     (trusted, `remote:` recorded, skills root detected);
   - untouched scaffold (e.g. from `setup --shared <name>`) → wires it to
@@ -88,7 +97,7 @@ no manual steps left to the user:
   remote with no refs is refused — pushing a local repo to a fresh remote
   stays a manual, user-confirmed step (persistence rule below).
 - **Third-party collection** (untrusted prompt content):
-  `~/workspaces/skill-hub/bin/skill-repo add-remote <url> [--name NAME]
+  `$SKILL_HUB/bin/skill-repo add-remote <url> [--name NAME]
   [--root PATH]` — clones under `external/`, registers with
   `untrusted: true`. Link individual skills only, and only after the
   user approved.
@@ -114,7 +123,7 @@ delete):
 
 Skills are improved where they are used (in projects) and flow back:
 
-`~/workspaces/skill-hub/bin/skill-repo promote [--force] <ref|path> <source>/<category>`
+`$SKILL_HUB/bin/skill-repo promote [--force] <ref|path> <source>/<category>`
 
 - `<ref|path>`: the skill dir to move up — a project path
   (`.roo/skills/foo`) or a hub ref (`personal/marketing/foo`).
@@ -174,10 +183,10 @@ skill. Nothing is committed automatically.
 
 After editing through a link:
 1. Commit AND push the change in the content repo
-   (`git -C ~/workspaces/skill-hub/personal …` or `…/shared/<name>`) —
+   (`git -C $SKILL_HUB/personal …` or `…/shared/<name>`) —
    ask first, per the persistence rule — applying the same review
    discipline as promote when the content is sensitive.
-2. Re-run `~/workspaces/skill-hub/bin/skill-repo link` in the project to
+2. Re-run `$SKILL_HUB/bin/skill-repo link` in the project to
    refresh the lockfile's commit SHAs (a link made while a skill dir is
    dirty records a `-dirty` commit).
 
@@ -186,3 +195,13 @@ After editing through a link:
 promote up (copy into hub) → link down (symlink into project). Once a
 project-local skill is promoted, delete the local copy and reference the
 hub skill in `.roo/skills.yml` instead — one source of truth.
+
+## Hub location
+
+- `resources/skill-hub-path.txt` is machine-local: generated by
+  `skill-repo setup`, gitignored in the hub repo — never commit or
+  hand-edit it.
+- Missing, or pointing at a moved hub? Re-run `skill-repo setup` from
+  the hub's current location — it rewrites the file and the symlink.
+- This skill dir is a symlink into the hub: template edits (your own or
+  pulled) are live immediately, no redeploy step.

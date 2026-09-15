@@ -19,3 +19,4 @@ __pycache__/
 # local migration working area (machine-local; already covered by /* above,
 # listed explicitly so nobody whitelists it by accident)
 /migration/
+meta/skill-hub-handling/resources/skill-hub-path.txt

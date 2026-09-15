@@ -5,6 +5,10 @@
 # Internal note: all internal record lines use '|' as field separator
 # (NOT tab) — IFS-whitespace delimiters collapse adjacent separators and
 # silently drop empty fields.
+#
+# Compat: plain bash >= 3.2 (macOS's stock /bin/bash works) + POSIX
+# awk/sed/find. The one GNU-ism left: realpath --relative-to (macOS:
+# brew install coreutils, PATH its gnubin first).
 set -euo pipefail
 
 HUB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -158,17 +162,25 @@ resolve() {
   SEL_TMP="$(mktemp)"
   RESULT=""
 
-  local -A used=()
+  # 'used' is the linkname -> "source:path" map, kept as newline-separated
+  # records "linkname|source:path" and probed with awk — associative arrays
+  # need bash >= 4, and macOS still ships bash 3.2 as /bin/bash.
+  local used=""
 
   absorb_matches() { # $1=matched index lines, $2=origin ref
-    local ln s c i u d p
+    local ln s c i u d p prev
     while IFS="$FS" read -r s c i u d p; do
       [ -n "${s:-}" ] || continue
       ln="$i"
-      if [ -n "${used[$ln]:-}" ] && [ "${used[$ln]}" != "$s:$p" ]; then
-        conflict "skill '$ln' selected twice ('${used[$ln]}' and '$s:$p') — names must be unique in .roo/skills (folder == frontmatter name, ref: $2)"
+      prev=""
+      if [ -n "$used" ]; then
+        prev="$(printf '%s' "$used" | awk -F"$FS" -v k="$ln" '$1 == k { print $2; exit }')"
       fi
-      used["$ln"]="$s:$p"
+      if [ -n "$prev" ] && [ "$prev" != "$s:$p" ]; then
+        conflict "skill '$ln' selected twice ('$prev' and '$s:$p') — names must be unique in .roo/skills (folder == frontmatter name, ref: $2)"
+      fi
+      used="$used$ln$FS$s:$p
+"
       printf '%s|%s|%s|%s|%s|%s\n' "$s" "$c" "$i" "$u" "$d" "$p" >> "$SEL_TMP"
     done <<< "$1"
   }
@@ -236,16 +248,15 @@ $m"
     mv "$SEL_TMP.keep" "$SEL_TMP"
   done
 
-  local -A seen=()
-  local s c i u d p
-  while IFS="$FS" read -r s c i u d p; do
-    [ -n "${s:-}" ] || continue
-    [ -n "${seen[$p]:-}" ] && continue
-    seen["$p"]=1
-    # link name == skill id == frontmatter name (Agent Skills spec); records are newline-separated
-    RESULT+="$i$FS$s$FS$c$FS$p
-"
-  done < <(sort -u -t"$FS" -k6,6 "$SEL_TMP")
+  # link name == skill id == frontmatter name (Agent Skills spec); records
+  # are newline-separated. sort orders by path (field 6), so records sharing
+  # a path are adjacent — awk drops the repeats (a 'seen' map would need an
+  # associative array, i.e. bash >= 4; macOS /bin/bash is 3.2).
+  RESULT="$(sort -u -t"$FS" -k6,6 "$SEL_TMP" | awk -F"$FS" '
+    $1 == ""   { next }
+    $6 == prev { next }
+               { prev = $6; print $3 FS $1 FS $2 FS $6 }
+  ')"
   rm -f "$SEL_TMP"
   [ -n "$RESULT" ] || info "manifest resolves to zero skills — nothing to link"
 }
@@ -374,7 +385,9 @@ cmd_list() {
 cmd_search() {
   [ -n "${1:-}" ] || die "usage: skill-repo search <term>"
   load_sources; build_index
-  printf '%s\n' "$INDEX" | awk -F"$FS" -v t="${1,,}" '
+  local term
+  term="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"   # tr, not bash-4 case-folding syntax (macOS bash 3.2)
+  printf '%s\n' "$INDEX" | awk -F"$FS" -v t="$term" '
     { low = tolower($1"/"$2"/"$3" "$5) }
     index(low, t) { printf "%-12s %-38s %s\n", $1, ($2 == "" ? $3 : $2"/"$3), substr($5, 1, 66) }
   ' || true
@@ -459,6 +472,60 @@ registry_append() { # $1=name $2=path [$3=remote] — rc 0: appended, rc 1: alre
   [ -n "${3:-}" ] && printf '    remote: %s\n' "$3" >> "$SOURCES_YML"
 }
 
+# ------------------------------------------------------------ meta skill
+# The meta skill is the only thing the outside world knows about the hub —
+# and every machine clones the hub somewhere else. Deployment: a symlink
+# into ~/.roo/skills (content always tracks the repo — pulls and template
+# edits are live immediately, no hooks) plus ONE generated file inside the
+# skill dir: resources/skill-hub-path.txt holds the absolute hub path and
+# is referenced relatively from the skill text (the Agent Skills
+# convention for supporting files). The path file is machine-local:
+# gitignored in the hub repo, rewritten by every setup run; it only goes
+# stale when the hub itself moves — which needs a setup run anyway.
+
+install_meta_skill() {
+  local src="$HUB/meta/$FINDER"
+  local dest="$GLOBAL_SKILLS/$FINDER"
+  mkdir -p "$GLOBAL_SKILLS"
+  [ -f "$src/SKILL.md" ] || die "setup: meta skill missing: $src/SKILL.md"
+
+  # 1) machine-local hub path, reached through the skill symlink
+  mkdir -p "$src/resources"
+  printf '%s\n' "$HUB" > "$src/resources/skill-hub-path.txt"
+  ensure_hub_gitignore "meta/$FINDER/resources/skill-hub-path.txt"
+
+  # 2) symlink the skill dir (relative target survives HOME moves)
+  local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$src")"
+  if [ -L "$dest" ]; then
+    ln -sfn "$target" "$dest"
+    info "setup: refreshed global skill symlink: $dest"
+  elif [ -d "$dest" ] && [ -f "$dest/.rendered-by-skill-repo" ]; then
+    rm -rf "$dest"   # interim build deployed a rendered copy — replace with the symlink
+    ln -s "$target" "$dest"
+    info "setup: replaced rendered copy with symlink: $dest"
+  elif [ -e "$dest" ]; then
+    if [ "$FORCE" = 1 ]; then
+      local ts; ts="$(date +%Y%m%d%H%M%S)"
+      mv "$dest" "$dest.pre-hub-$ts"; ln -s "$target" "$dest"
+      warn "moved existing $FINDER aside ($dest.pre-hub-$ts)"
+      info "setup: installed global skill: $dest"
+    else
+      warn "$dest exists and is not a symlink — not overwritten (rerun setup --force)"
+    fi
+  else
+    ln -s "$target" "$dest"
+    info "setup: installed global skill: $dest -> $src"
+  fi
+  info "setup: hub path recorded in $src/resources/skill-hub-path.txt"
+}
+
+ensure_hub_gitignore() { # $1=hub-relative path to keep untracked (idempotent)
+  [ -d "$HUB/.git" ] || return 0   # not a git repo (test fixtures): nothing to do
+  local gi="$HUB/.gitignore"
+  touch "$gi"
+  grep -qxF "$1" "$gi" || printf '%s\n' "$1" >> "$gi"
+}
+
 cmd_setup() {
   local personal_url="" t name url path root remote untrusted cnt note
   local shared_specs=()
@@ -495,25 +562,7 @@ cmd_setup() {
   if registry_append personal personal; then info "setup: sources.yml: registered 'personal' (personal/)"; fi
 
   chmod +x "$0"
-  mkdir -p "$GLOBAL_SKILLS"
-  local dest="$GLOBAL_SKILLS/$FINDER"
-  local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$HUB/meta/skill-hub-handling")"
-  if [ -L "$dest" ]; then
-    ln -sfn "$target" "$dest"
-    info "setup: refreshed global skill symlink: $dest"
-  elif [ -e "$dest" ]; then
-    if [ "$FORCE" = 1 ]; then
-      local ts; ts="$(date +%Y%m%d%H%M%S)"
-      mv "$dest" "$dest.pre-hub-$ts"; ln -s "$target" "$dest"
-      warn "moved existing $FINDER aside ($dest.pre-hub-$ts)"
-      info "setup: installed global skill: $dest"
-    else
-      warn "$dest exists and is not a symlink — not overwritten (rerun setup --force)"
-    fi
-  else
-    ln -s "$target" "$dest"
-    info "setup: installed global skill: $dest -> $HUB/meta/skill-hub-handling"
-  fi
+  install_meta_skill
 
   info "setup: done. sources registered in sources.yml:"
   load_sources
