@@ -55,14 +55,16 @@ no manual steps left to the user:
 4. **Link**: `~/workspaces/skill-hub/bin/skill-repo link --force` —
    vendored copies move aside as `*.pre-hub-<ts>` (never deleted; tell
    the user they can remove them once confident).
-5. **Git policy**: hub links carry a `.hub` marker (`data-table.hub`) and
-   are covered by one committed ignore line (`.roo/skills/*.hub` — `link`
-   adds it automatically). Commit the manifest and that line. Real
-   project-specific skills in `.roo/skills/` stay tracked — never ignore
-   the whole directory. Also ignored: `.roo/skills.lock`,
-   `.roo/skills.backup-*.tgz`. No symlinks are committed, ever.
-6. **Commit**: `.roo/skills.yml`, the symlinks, and the gitignore change
-   — never the user's unrelated dirty files. Stage paths explicitly.
+5. **Git policy**: hub links are plain-named symlinks (`data-table` — the
+   folder name must equal the skill's front-matter `name`, that's the
+   Agent Skills spec). Each link gets one `/name` line in
+   `.roo/skills/.gitignore` (`link` appends it automatically). Commit the
+   manifest and that file. Real project-specific skills in
+   `.roo/skills/` stay tracked — never ignore the whole directory. Also
+   ignored: `.roo/skills.lock`, `.roo/skills.backup-*.tgz`. No symlinks
+   are committed, ever.
+6. **Commit**: `.roo/skills.yml` and `.roo/skills/.gitignore` — never the
+   user's unrelated dirty files. Stage paths explicitly.
 7. **Report**: what got linked, what stayed local and why, what looks
    promote-worthy, and where the `.pre-hub-*` backups are.
 

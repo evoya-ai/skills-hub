@@ -113,12 +113,14 @@ exclude:
   - seo/seo-drift            # subtract from the selection
 ```
 
-**Git policy:** commit `.roo/skills.yml`. Hub links are named with a
-`.hub` marker (`data-table.hub`) and covered by one committed ignore line
-(`.roo/skills/*.hub` — `link` adds it for you). Real project-specific
-skills in that directory stay tracked exactly as before; the links
-themselves are machine state, recreated by `setup` + `link` on any clone.
-Also ignored: `.roo/skills.lock` and `skills.backup-*.tgz`.
+**Git policy:** commit `.roo/skills.yml` and `.roo/skills/.gitignore`.
+Hub links are plain-named symlinks (`data-table`) — the folder name must
+equal the skill's front-matter `name`, that's the Agent Skills spec. Each
+link gets one `/name` line in `.roo/skills/.gitignore` (`link` appends it
+for you — commit the file). Real project-specific skills in that directory
+stay tracked exactly as before; the links themselves are machine state,
+recreated by `setup` + `link` on any clone. Also ignored:
+`.roo/skills.lock` and `skills.backup-*.tgz`.
 
 ## Layout 📐
 

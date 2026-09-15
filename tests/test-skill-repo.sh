@@ -249,8 +249,101 @@ t13() {
   assert "personal is active in template" grep -qE '^[[:space:]]*-[[:space:]]*name:[[:space:]]*personal[[:space:]]*$' "$REPO/sources.template.yml"
 }
 
+t14() {
+  echo "T14 link: plain names + .roo/skills/.gitignore, no root pattern"
+  new_hub t14
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills"
+  git init -q -b main "$proj"
+  printf 'source: evoya\nskills:\n  - marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  ERR="$(cat "$CASE/stderr" 2>/dev/null || true)"
+  assert "link rc=0" test "$RC" = 0
+  assert "plain-name symlink exists" test -L "$proj/.roo/skills/data-table"
+  assert "no .hub name" test ! -e "$proj/.roo/skills/data-table.hub"
+  assert "skills .gitignore entry" grep -qxF '/data-table' "$proj/.roo/skills/.gitignore"
+  assert "skills .gitignore header" grep -qxF '# hub links — managed by skill-repo link' "$proj/.roo/skills/.gitignore"
+  assert "root .gitignore untouched" test ! -e "$proj/.gitignore"
+  assert "lock key is plain" grep -q '^data-table:$' "$proj/.roo/skills.lock"
+  assert "no aliased field in lock" test -z "$(grep '^  aliased:' "$proj/.roo/skills.lock")"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "relink rc=0" test "$RC" = 0
+  assert "no duplicate entries" test "$(grep -c '^/data-table$' "$proj/.roo/skills/.gitignore")" = 1
+  printf 'source: evoya\nskills: []\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "empty-manifest relink rc=0" test "$RC" = 0
+  assert "stale entry reconciled away" test -z "$(grep -x '/data-table' "$proj/.roo/skills/.gitignore")"
+  assert "header survives reconcile" grep -qxF '# hub links — managed by skill-repo link' "$proj/.roo/skills/.gitignore"
+  printf '/hand-written\n' > "$proj/.roo/skills/.gitignore"
+  printf 'source: evoya\nskills:\n  - marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "headerless file: link rc=0" test "$RC" = 0
+  assert "headerless file: entry appended" grep -qxF '/data-table' "$proj/.roo/skills/.gitignore"
+  assert "headerless file: user line kept" grep -qxF '/hand-written' "$proj/.roo/skills/.gitignore"
+}
+
+t15() {
+  echo "T15 manifest alias entry ('as') is rejected"
+  new_hub t15
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills"
+  git init -q -b main "$proj"
+  printf 'source: evoya\nskills:\n  - marketing/data-table as tbl\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  ERR="$(cat "$CASE/stderr" 2>/dev/null || true)"
+  assert "link rc!=0" test "$RC" != 0
+  assert_match "message rejects aliases" "$OUT$ERR" "aliases are no longer supported"
+}
+
+t16() {
+  echo "T16 verify: linked frontmatter name != folder name fails hard"
+  new_hub t16
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  sed -i 's/^name: data-table$/name: renamed-table/' "$HUB/shared/evoya/skills/marketing/data-table/SKILL.md"
+  git -C "$HUB/shared/evoya" add -A
+  git -C "$HUB/shared/evoya" commit -qm rename
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills"
+  git init -q -b main "$proj"
+  printf 'source: evoya\nskills:\n  - marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "link rc=0" test "$RC" = 0
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" verify 2>"$CASE/stderr" )"; RC=$?
+  ERR="$(cat "$CASE/stderr" 2>/dev/null || true)"
+  assert "verify rc!=0" test "$RC" != 0
+  assert_match "message names the mismatch" "$OUT$ERR" "frontmatter name 'renamed-table' != link name 'data-table'"
+}
+
+t17() {
+  echo "T17 local skills untouched and never ignored"
+  new_hub t17
+  seed_remote "$CASE/remote.git" main
+  run_cli setup --shared "evoya=file://$CASE/remote.git"
+  assert "setup rc=0" test "$RC" = 0
+  proj="$CASE/proj"
+  mkdir -p "$proj/.roo/skills/my-skill"
+  printf -- '---\nname: my-skill\ndescription: local\n---\n' > "$proj/.roo/skills/my-skill/SKILL.md"
+  git init -q -b main "$proj"
+  printf 'source: evoya\nskills:\n  - marketing/data-table\n' > "$proj/.roo/skills.yml"
+  OUT="$( cd "$proj" && bash "$HUB/bin/skill-repo" link 2>"$CASE/stderr" )"; RC=$?
+  assert "link rc=0" test "$RC" = 0
+  assert "local dir still a real dir" test -d "$proj/.roo/skills/my-skill"
+  assert "local dir not a symlink" test ! -L "$proj/.roo/skills/my-skill"
+  assert "local skill not ignored" test -z "$(grep -x '/my-skill' "$proj/.roo/skills/.gitignore")"
+  assert "git sees local skill as untracked" test -n "$(git -C "$proj" status --porcelain -- .roo/skills/my-skill)"
+}
+
 t1;  t2;  t3;  t4;  t5;  t6;  t7
 t8;  t9;  t10; t11; t12; t13
+t14; t15; t16; t17
 
 echo
 echo "passed: $PASS  failed: $FAIL"

@@ -4,7 +4,7 @@ Shapes deliberately mirror what the real scanner will produce later:
   - sources            <- sources.yml        (name, path, root, remote, untrusted)
   - skills             <- skills/<cat>/<skill>/SKILL.md frontmatter
   - projects           <- .link-roots + each project's .roo/skills.lock
-  - local skills       <- real (non-.hub) directories in .roo/skills/
+  - local skills       <- real (non-symlink) directories in .roo/skills/
 
 Swap this module for a real scanner and the API stays identical.
 When the real wiring lands, this file becomes data_real.py's fallback.
@@ -311,7 +311,7 @@ _SOURCES = [
 
 # ---------------------------------------------------------------------------
 # Projects: name, path, linked skill ids, local skills (mirrors skills.lock +
-# non-.hub entries in .roo/skills/)
+# non-symlink entries in .roo/skills/)
 # ---------------------------------------------------------------------------
 
 _PROJECTS = [
