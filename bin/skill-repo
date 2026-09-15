@@ -423,7 +423,8 @@ ensure_repo() { # $1=relative dir, $2=optional url
     info "setup: cloned $2 -> $1"
   else
     mkdir -p "$dir/skills"
-    git -C "$dir" init -q -b main
+    git -C "$dir" init -q
+    git -C "$dir" symbolic-ref HEAD refs/heads/main
     printf '# %s skills\n\nLayout: skills/<category>/<skill>/SKILL.md — see the hub README.\n' "$1" > "$dir/README.md"
     # NOTE: the commit message below is a behavioral contract —
     # is_untouched_scaffold (attach) detects scaffolds by it. Change both or neither.
