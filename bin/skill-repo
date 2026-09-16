@@ -7,11 +7,14 @@
 # silently drop empty fields.
 #
 # Compat: plain bash >= 3.2 (macOS's stock /bin/bash works) + POSIX
-# awk/sed/find. The one GNU-ism left: realpath --relative-to (macOS:
-# brew install coreutils, PATH its gnubin first).
+# awk/sed/find. No GNU coreutils required.
 set -euo pipefail
 
-HUB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# An inherited CDPATH can make bash's cd print paths to stdout, corrupting
+# command substitutions throughout this script. It has no useful role here.
+unset CDPATH
+
+HUB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SOURCES_YML="$HUB/sources.yml"
 SOURCES_TEMPLATE="$HUB/sources.template.yml"
 GLOBAL_SKILLS="$HOME/.roo/skills"
@@ -22,6 +25,74 @@ die()      { echo "skill-repo: error: $*" >&2; exit 1; }
 conflict() { echo "skill-repo: conflict: $*" >&2; exit 2; }
 warn()     { echo "skill-repo: warning: $*" >&2; }
 info()     { echo "skill-repo: $*"; }
+
+# Both helpers operate on existing directories. Using cd + pwd -P keeps the
+# CLI portable across GNU/Linux and macOS, whose realpath/readlink flags differ.
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+relative_dir() { # $1=from directory, $2=target directory
+  local from to
+  from="$(canonical_dir "$1")" || return 1
+  to="$(canonical_dir "$2")" || return 1
+  awk -v from="$from" -v to="$to" '
+    BEGIN {
+      nf = split(from, f, "/")
+      nt = split(to, t, "/")
+      i = 1
+      while (i <= nf && i <= nt && f[i] == t[i]) i++
+
+      out = ""
+      for (j = i; j <= nf; j++) if (f[j] != "") out = out "../"
+      for (j = i; j <= nt; j++) if (t[j] != "") out = out t[j] "/"
+      sub(/\/$/, "", out)
+      print (out == "" ? "." : out)
+    }
+  '
+}
+
+canonical_path_allow_missing() { # $1=absolute path; missing final components allowed
+  local path="$1" suffix="" leaf parent base
+  case "$path" in /*) ;; *) return 1 ;; esac
+
+  # Resolve the longest existing directory prefix physically. This follows
+  # intermediate symlinks before ownership checks while still handling a
+  # skill directory that has already disappeared from the hub.
+  while [ ! -d "$path" ]; do
+    [ -e "$path" ] && return 1       # existing non-directory
+    [ -L "$path" ] && return 1       # broken symlink: preserve it safely
+    [ "$path" = "/" ] && return 1
+    leaf="${path##*/}"
+    [ -n "$leaf" ] || return 1
+    case "$leaf" in .|..) return 1 ;; esac
+    suffix="/$leaf$suffix"
+    parent="${path%/*}"
+    [ -n "$parent" ] || parent="/"
+    [ "$parent" != "$path" ] || return 1
+    path="$parent"
+  done
+
+  base="$(canonical_dir "$path")" || return 1
+  if [ "$base" = "/" ]; then
+    printf '/%s\n' "${suffix#/}"
+  else
+    printf '%s%s\n' "$base" "$suffix"
+  fi
+}
+
+symlink_target_path() { # $1=symlink; works even when its target is missing
+  local link="$1" target base path
+  target="$(readlink "$link")" || return 1
+  case "$target" in
+    /*) path="$target" ;;
+    *)
+      base="$(canonical_dir "$(dirname "$link")")" || return 1
+      path="$base/$target"
+      ;;
+  esac
+  canonical_path_allow_missing "$path"
+}
 
 usage() {
   cat <<'EOF'
@@ -285,7 +356,7 @@ cmd_link() {
       mv "$dest" "$dest.pre-hub-$ts"
       warn "moved aside: $dest -> $dest.pre-hub-$ts"
     fi
-    rel="$(realpath --relative-to=".roo/skills" "$path")"
+    rel="$(relative_dir ".roo/skills" "$path")"
     ln -sfn "$rel" "$dest"
     commit="-"
     if commit="$(git -C "$path" rev-parse --short=7 HEAD 2>/dev/null)"; then
@@ -306,7 +377,7 @@ cmd_link() {
     names="$(printf '%s' "$RESULT" | cut -d"$FS" -f1)"
     for l in .roo/skills/*; do
       [ -L "$l" ] || continue
-      t="$(readlink -f "$l" 2>/dev/null)" || continue
+      t="$(symlink_target_path "$l")" || continue
       case "$t" in "$HUB"/*) ;; *) continue ;; esac
       name="$(basename "$l")"
       if ! printf '%s\n' "$names" | grep -qxF "$name"; then
@@ -495,7 +566,7 @@ install_meta_skill() {
   ensure_hub_gitignore "meta/$FINDER/resources/skill-hub-path.txt"
 
   # 2) symlink the skill dir (relative target survives HOME moves)
-  local target; target="$(realpath --relative-to="$GLOBAL_SKILLS" "$src")"
+  local target; target="$(relative_dir "$GLOBAL_SKILLS" "$src")"
   if [ -L "$dest" ]; then
     ln -sfn "$target" "$dest"
     info "setup: refreshed global skill symlink: $dest"
@@ -540,7 +611,8 @@ cmd_setup() {
   done
 
   ensure_repo personal "$personal_url"
-  for t in "${shared_specs[@]}"; do
+  for t in "${shared_specs[@]:-}"; do
+    [ -n "$t" ] || continue
     name="${t%%=*}"; url=""
     if [[ "$t" == *=* ]]; then url="${t#*=}"; fi
     ensure_repo "shared/$name" "$url"
@@ -554,7 +626,8 @@ cmd_setup() {
     [ -n "${n:-}" ] || continue
     if registry_append "$n" "$p"; then info "setup: sources.yml: registered '$n' ($p)"; fi
   done <<< "$(parse_sources "$SOURCES_TEMPLATE")"
-  for t in "${shared_specs[@]}"; do
+  for t in "${shared_specs[@]:-}"; do
+    [ -n "$t" ] || continue
     name="${t%%=*}"; url=""
     if [[ "$t" == *=* ]]; then url="${t#*=}"; fi
     if registry_append "$name" "shared/$name" "$url"; then info "setup: sources.yml: registered '$name' (shared/$name)"; fi

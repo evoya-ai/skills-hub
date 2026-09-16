@@ -84,10 +84,8 @@ phrased exactly for the `skill-hub-handling` skill to execute.
 
 ## Setup 🚀
 
-**Requirements:** bash ≥ 3.2 (macOS's stock `/bin/bash` works), `git`, and
-— for `setup`/`link` — GNU `realpath` (the `--relative-to` flag; BSD
-realpath lacks it). On macOS: `brew install coreutils`, then put
-`$(brew --prefix)/opt/coreutils/libexec/gnubin` first on your `PATH`.
+**Requirements:** bash ≥ 3.2 (macOS's stock `/bin/bash` works) and `git`.
+No GNU coreutils or other dependencies are required.
 
 The hub, once per machine:
 
@@ -136,7 +134,7 @@ recreated by `setup` + `link` on any clone. Also ignored:
 
 ```
 skill-hub/                    # this repo (bootstrap: docs, CLI, templates)
-├── bin/skill-repo            # the CLI (bash ≥ 3.2 + git; macOS: coreutils, see Setup)
+├── bin/skill-repo            # the CLI (bash ≥ 3.2 + git)
 ├── meta/skill-hub-handling/  # the ONE global skill — symlinked into ~/.roo/skills;
                               #  its gitignored resources/skill-hub-path.txt pins the
                               #  local hub path (referenced relatively by the skill)

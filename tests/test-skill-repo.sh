@@ -26,6 +26,10 @@ PASS=0 FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok  - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL- $1"; }
 
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
 assert() { # $1=desc, rest: command expected to succeed
   local desc="$1"; shift
   if "$@" >/dev/null 2>&1; then ok "$desc"; else bad "$desc"; fi
@@ -308,7 +312,9 @@ t16() {
   seed_remote "$CASE/remote.git" main
   run_cli setup --shared "evoya=file://$CASE/remote.git"
   assert "setup rc=0" test "$RC" = 0
-  sed -i 's/^name: data-table$/name: renamed-table/' "$HUB/shared/evoya/skills/marketing/data-table/SKILL.md"
+  sed 's/^name: data-table$/name: renamed-table/' \
+    "$HUB/shared/evoya/skills/marketing/data-table/SKILL.md" > "$CASE/SKILL.md"
+  mv "$CASE/SKILL.md" "$HUB/shared/evoya/skills/marketing/data-table/SKILL.md"
   git -C "$HUB/shared/evoya" add -A
   git -C "$HUB/shared/evoya" commit -qm rename
   proj="$CASE/proj"
@@ -356,7 +362,7 @@ t18() {
   assert "link rc=0" test "$RC" = 0
   assert "exactly one lock entry" test "$(grep -c '^data-table:$' "$proj/.roo/skills.lock")" = 1
   assert "gitignore entry not duplicated" test "$(grep -c '^/data-table$' "$proj/.roo/skills/.gitignore")" = 1
-  assert "symlink is a single link" test "$(find "$proj/.roo/skills" -maxdepth 1 -name 'data-table' | wc -l)" = 1
+  assert "symlink is a single link" test "$(find "$proj/.roo/skills" -maxdepth 1 -name 'data-table' | awk 'END { print NR }')" = 1
 }
 
 t19() {
@@ -406,7 +412,7 @@ t22() {
   assert "setup rc=0" test "$RC" = 0
   g="$HOME/.roo/skills/skill-hub-handling"
   assert "deployed as symlink" test -L "$g"
-  assert "symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+  assert "symlink targets the hub" test "$(canonical_dir "$g")" = "$HUB/meta/skill-hub-handling"
   assert "path file written" test "$(cat "$HUB/meta/skill-hub-handling/resources/skill-hub-path.txt")" = "$HUB"
   assert "path file reachable through symlink" test -f "$g/resources/skill-hub-path.txt"
   assert "SKILL.md references the path file" grep -qF 'resources/skill-hub-path.txt' "$g/SKILL.md"
@@ -424,7 +430,7 @@ t22() {
   printf -- '---\nname: skill-hub-handling\ndescription: rendered\n---\n' > "$g/SKILL.md"
   run_cli setup
   assert "rendered copy migrated to symlink" test -L "$g"
-  assert "migrated symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+  assert "migrated symlink targets the hub" test "$(canonical_dir "$g")" = "$HUB/meta/skill-hub-handling"
 }
 
 t23() {
@@ -441,7 +447,7 @@ t23() {
   run_cli setup --force
   assert "setup --force rc=0" test "$RC" = 0
   assert "symlink installed" test -L "$g"
-  assert "symlink targets the hub" test "$(readlink -f "$g")" = "$HUB/meta/skill-hub-handling"
+  assert "symlink targets the hub" test "$(canonical_dir "$g")" = "$HUB/meta/skill-hub-handling"
   assert "hand-made backup kept" test -n "$(find "$HOME/.roo/skills" -maxdepth 1 -name 'skill-hub-handling.pre-hub-*')"
 }
 
