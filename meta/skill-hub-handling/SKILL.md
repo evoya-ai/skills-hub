@@ -19,6 +19,9 @@ its `sources.yml`.
 
 ## Read path: find and link a skill
 
+Quick check — is a given skill shared? `ls -ld .roo/skills/<name>`:
+a **symlink** = hub-shared, a plain directory = project-local.
+
 When the user asks for a capability and no loaded skill covers it:
 
 1. **Search** — `$SKILL_HUB/bin/skill-repo search <term>`
